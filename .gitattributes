@@ -1,0 +1,4 @@
+# Keep LF everywhere; the sources are written with LF and the Windows autocrlf warning is noise.
+* text=auto eol=lf
+*.png binary
+*.svg text
