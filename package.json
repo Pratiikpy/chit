@@ -1,0 +1,25 @@
+{
+  "name": "chit",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build -w @chit/web && npm run build:api",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "e2e": "node --experimental-strip-types scripts/live-e2e.mjs",
+    "build:api": "esbuild apps/api/src/vercel-entry.ts --bundle --platform=node --format=esm --target=node22 --outfile=api/index.js --external:@nimiq/core --external:better-sqlite3 --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\""
+  },
+  "description": "Paste the deal you already agreed. Both sign it. The payment carries the proof.",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

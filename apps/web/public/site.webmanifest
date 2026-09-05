@@ -1,0 +1,11 @@
+{
+  "name": "chit",
+  "short_name": "chit",
+  "description": "Paste the deal you already agreed. Both sign it. The payment carries the proof.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FBFBFD",
+  "theme_color": "#1F2348",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@chit/api",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "node --experimental-strip-types --watch src/server.ts",
+    "start": "node --experimental-strip-types src/server.ts",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chit/core": "*",
+    "@chit/verify": "*",
+    "@hono/node-server": "^1.13.8",
+    "@nimiq/utils": "^0.12.4",
+    "@vercel/blob": "^2.8.0",
+    "better-sqlite3": "^11.8.1",
+    "hono": "^4.13.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.1",
+    "typescript": "^5.7.3"
+  }
+}
