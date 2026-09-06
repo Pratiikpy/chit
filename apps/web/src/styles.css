@@ -24,13 +24,27 @@
  *    hero; everything a person does not need to decide is folded away, never deleted.
  */
 
-@import 'nimiq-css/css/preflight.css';
-
 /*
- * `nimiq-css/css/colors.css` is not imported: nothing references a --nq-* token now that the
- * palette below is the system. `fonts.css` was never imported — it declares @font-face rules
- * for files the package does not ship, producing two 404s on every load, and zero console
- * errors is part of a passing page.
+ * chit has no CSS dependency. It used to import `nimiq-css/css/preflight.css`; that import was
+ * removed on 6 September for three reasons, in order of seriousness:
+ *
+ * 1. **Licence.** The competition requires MIT. `nimiq-css` publishes **no `license` field**
+ *    (checked: `npm view nimiq-css license` returns nothing, and the installed
+ *    `node_modules/nimiq-css/package.json` has no such key), and its source repo
+ *    `github.com/onmax/nimiq-ui` reports `license: null` with no LICENSE file at the root.
+ *    No licence means all rights reserved, and its CSS was being compiled into chit's bundle.
+ * 2. **It hid empty elements.** `:where(p,span):empty:not(.iconify,[class*='i-']){display:none}`
+ *    silently removed chit's status dot, the identicon disc and the busy spinner — three marks
+ *    that are empty spans by design. Found by measuring the rendered page, not by eye.
+ * 3. **It expanded every tap target by 16px on touch devices.** A `::before` inset by `-1rem`
+ *    on every `a` and enabled `button` means adjacent stacked buttons overlap by 32px and the
+ *    later element in DOM order swallows taps meant for its neighbour.
+ *
+ * It also set `--nq-font-sans` to Mulish and painted `body` with `--colors-neutral-0`, a
+ * variable it did not ship — so the ground colour was an invalid value chit had to override.
+ *
+ * The reset below is chit's own: the parts of a modern reset this app actually uses, and
+ * nothing else.
  *
  * Instrument Sans is loaded from Google Fonts in index.html with preconnect. Every stack
  * below still names real fallbacks, so a blocked or slow font download degrades to the
@@ -149,37 +163,44 @@ html.in-nimiq-pay {
   }
 }
 
-* { box-sizing: border-box; }
+/* ---------- reset ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
 
 /*
- * nimiq-css's preflight hides every empty `span` and `p` (`:where(p,span):empty:not(...)`),
- * at specificity (0,2,0). Three of chit's marks are empty spans by design — the status dot,
- * the identicon disc before its image lands, and the busy spinner — and all three were
- * silently invisible until the rendered page was measured. Each is re-declared here at the
- * same specificity, later in the cascade, so it wins.
+ * Margins are declared where they are wanted, never inherited from a browser default. The
+ * elements listed are every one chit renders.
  */
-.status .status__dot { display: block; }
-.idn.idn { display: inline-grid; }
-.spin.spin { display: inline-block; }
+h1, h2, h3, p, figure, blockquote, dl, dd, ul, ol, pre { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+.rules { list-style: disc; }
+
+/* A control inherits the page's type unless it says otherwise. */
+button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; padding: 0; }
+
+/* Media never overflows its column and never sits on the text baseline. */
+img, svg, canvas, video { display: block; max-width: 100%; }
+
+a { color: inherit; }
+:where(a, button:not(:disabled), summary, [role='button']) { cursor: pointer; }
+
+/* An input's own font must be at least 16px or iOS zooms the page on focus. */
+input, textarea { font-size: 16px; }
 
 /*
- * The typeface is claimed through nimiq-css's own variables, not element by element.
+ * The typeface now comes from `body` and inherits, because nothing else declares one.
  *
- * Preflight sets the family with `*:where(:not(:where(code, pre)))` — a universal rule at
- * zero specificity that reaches every element. Overriding it by listing `body, h1, button…`
- * looked like it worked and did not: `p` was still Mulish, and every element nobody thought
- * to list would have been too. Setting `--nq-font-sans` is the documented seam and fixes
- * the whole document at once.
+ * Worth keeping the history: while the app imported nimiq-css, the family was set by
+ * `*:where(:not(:where(code, pre)))` — a universal rule at zero specificity reaching every
+ * element — so overriding it by listing `body, h1, button…` looked like it worked and did
+ * not; `p` stayed Mulish. That is why the font was claimed through the package's own
+ * `--nq-font-sans` variable instead. With the package gone, plain inheritance is enough.
  *
- * Worth recording that the screenshot looked entirely plausible while the font was wrong.
- * Reading `document.fonts` is what caught it: the faces were registered but never
+ * And worth recording that the screenshot looked entirely plausible while the font was
+ * wrong. Reading `document.fonts` is what caught it: the faces were registered but never
  * downloaded, because nothing on the page had asked for them.
  */
-:root {
-  --nq-font-sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --nq-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-}
-
 html, body {
   margin: 0;
   padding: 0;
