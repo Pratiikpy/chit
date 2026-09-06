@@ -20,7 +20,7 @@
  *   and their own locale's notation, with the NIM figure beside it rather than hidden.
  */
 
-import { chitHash, fromBase64Url, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
+import { canonicaliseDelivery, chitHash, fromBase64Url, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
 import QrCreator from 'qr-creator';
 import { api, type ApiChit, type LedgerView } from './api.ts';
 import { buildDraft, BLOCKS_PER_DAY, fieldsFromTerms, isReady, quoteExpired, type DraftFields, type Quote } from './compose.ts';
@@ -404,7 +404,7 @@ async function workerStrip(worker: string): Promise<HTMLElement | null> {
   const result = await api.ledger(worker);
   if (!result.ok) return null;
   const w = result.value.asWorker;
-  if (w.settled === 0) return stripLine(t('First quote from this wallet.'), 'info');
+  if (w.settled === 0) return stripLine(t('This wallet has not been paid through chit before.'), 'info');
   return stripLine(`${count(w.settled, 'Paid {n} time', 'Paid {n} times')} · ${count(w.distinctPayers, 'by {n} client', 'by {n} clients')}`, 'shield');
 }
 
@@ -1294,6 +1294,7 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
         testnetBanner(chit),
         deal(chit.chit.text),
         demoNote,
+        deliveredBlock(chit, false),
         el('div', {
           class: 'card',
           children: [
@@ -1310,6 +1311,85 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
       ],
       actions: [payButton, button(t('Later'), () => navigate('/'), 'plain')],
     }),
+  );
+}
+
+/**
+ * "Here it is" — what the worker signs, and what the payer then sees.
+ *
+ * The mark is a second signed statement over its own canonical form, so it is evidence that
+ * that wallet said it about that chit at a recorded time. It obliges nobody: the payer still
+ * decides, and the copy says so on both sides. The link is stored as a string and the file
+ * never touches chit — storage is a different product with a different liability.
+ */
+function deliveredBlock(chit: ApiChit, viewerIsWorker: boolean): HTMLElement | null {
+  const delivered = chit.delivery;
+  if (!delivered) return null;
+  const children: Array<Node | null> = [
+    el('div', { class: 'kicker', text: viewerIsWorker ? t('You marked it delivered') : t('They marked it delivered') }),
+    el('p', { class: 'small secondary', text: t('Signed by the wallet being paid, on {when}. It is a record, not a receipt — nothing has been paid because of it.', { when: formatDate(delivered.at) }) }),
+  ];
+  if (delivered.note) children.push(deal(delivered.note, true));
+  if (delivered.link) {
+    children.push(
+      el('a', {
+        class: 'link-row',
+        attrs: { href: delivered.link, target: '_blank', rel: 'noopener noreferrer' },
+        children: [document.createTextNode(t('Open the delivery')), icon('external', 'icon--sm')],
+      }),
+      el('p', { class: 'small muted', text: displayLink(delivered.link) }),
+    );
+  }
+  return el('div', { class: 'card card--pad stack stack--tight', children: children.filter((c): c is Node => c !== null) });
+}
+
+/**
+ * The form the worker fills in to say it. One optional link, one optional sentence — because
+ * plenty of work is handed over in the chat it was agreed in, and a mark with no link is
+ * still the state change that matters.
+ */
+function deliverPanel(chit: ApiChit, navigate: Navigate): HTMLElement {
+  const messages = el('div', { class: 'stack stack--tight' });
+  const link = el('input', {
+    class: 'field',
+    attrs: { type: 'url', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', 'aria-label': t('A link to the work'), placeholder: t('https://… (optional)') },
+  });
+  const noteInput = el('input', {
+    class: 'field',
+    attrs: { type: 'text', maxlength: 200, autocomplete: 'off', 'aria-label': t('One line about it'), placeholder: t('One line about it (optional)') },
+  });
+  const send = button(t('Mark it delivered'), () => void go(), 'quiet', 'check');
+
+  async function go(): Promise<void> {
+    await withBusy(send, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const canonical = canonicaliseDelivery({ chitId: chit.id, link: link.value.trim(), note: noteInput.value.trim() });
+        const signature = await session.wallet.signText(canonical);
+        const result = await api.markDelivered(chit.id, signature, link.value.trim(), noteInput.value.trim());
+        if (!result.ok) {
+          messages.append(note(result.error, 'warn'));
+          return;
+        }
+        navigate(chitPath(chit.id));
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
+      }
+    });
+  }
+  return details(
+    t('Say it is delivered'),
+    [
+      el('p', { class: 'small secondary', text: t('Signs one line with your wallet saying you handed the work over. It moves no money and obliges nobody to pay — it is a record, and the other side can see it.') }),
+      link,
+      noteInput,
+      send,
+      messages,
+    ],
+    { cls: 'help' },
   );
 }
 
@@ -1339,7 +1419,9 @@ function awaitingPaymentScreen(chit: ApiChit, navigate: Navigate, isWorker: bool
         testnetBanner(chit),
         deal(chit.chit.text),
         state,
+        deliveredBlock(chit, isWorker),
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me, nameable: isWorker }), dueRow(chit), factRows(chit)] }),
+        isWorker && !chit.delivery ? deliverPanel(chit, navigate) : null,
       ],
       actions: [button(t('Check now'), () => navigate(chitPath(chit.id)), 'quiet')],
     }),
@@ -1416,6 +1498,7 @@ function receipt(chit: ApiChit, me: string | null, isWorker: boolean): HTMLEleme
        * It lived on the Activity screen, which is the one screen nobody else ever sees.
        * Stated per payment and captioned literally: this is arithmetic, not a claim.
        */
+      chit.delivery ? el('p', { class: 'receipt__delivered', text: t('Marked delivered on {when}', { when: formatDate(chit.delivery.at) }) }) : null,
       isWorker ? el('p', { class: 'receipt__kept', text: t('You kept all of it. A 20% marketplace cut would have been {amount}.', { amount: nimRound((BigInt(chit.chit.luna) / 5n).toString(10)) }) }) : null,
       factRows(chit, { settled: true }),
     ],

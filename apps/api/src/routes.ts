@@ -13,7 +13,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { canonicalise, chitHash, parseCanonical, type Chit } from '@chit/core';
+import { canonicalise, canonicaliseDelivery, chitHash, parseCanonical, type Chit } from '@chit/core';
 import { addressFromPublicKey, verifyChit, verifySignedText } from '@chit/verify';
 import type { StoredChit } from './db.ts';
 import type { ChitRepository } from './repository.ts';
@@ -125,6 +125,8 @@ function present(
     declined: stored.declinedAt !== undefined,
     /** The chit this one answers, if any. Metadata, not part of the signed text. */
     parent: stored.parent ?? null,
+    /** "Here it is", signed by the party who will be paid. Never part of the agreement. */
+    delivery: stored.delivery ? { link: stored.delivery.link, note: stored.delivery.note, at: stored.delivery.at } : null,
     bounty: flags.bounty ? flags.bounty(stored) : false,
     demoWorker: demoSigned,
     createdAt: stored.createdAt,
@@ -477,6 +479,68 @@ export function createRoutes(options: RouteOptions) {
     await store.decline(stored.id);
     const updated = await store.get(stored.id);
     return c.json(present(updated ?? stored, baseUrl, flags), 200);
+  });
+
+  /**
+   * "Here it is" — the state between signing and being paid.
+   *
+   * Signed by the party who will be paid, over a canonical form of its own (`@chit/core`
+   * `canonicaliseDelivery`), so it is evidence that *that wallet* said it about *that* chit.
+   * It is never folded into the agreement: the chit's digest is the product, and a delivery
+   * inside it would change every digest and let one side alter what both had signed.
+   *
+   * It obliges nobody. The payer still decides whether to pay, and the copy says so.
+   */
+  app.post('/api/chits/:id/delivered', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    if (stored.settledTx) return c.json({ code: 'already-settled', error: 'This chit is already paid.' }, 409);
+    if (stored.declinedAt) return c.json({ code: 'declined', error: 'This chit was declined.' }, 409);
+    if (options.bounty?.isBounty(stored)) return c.json({ code: 'not-for-bounty', error: 'A bounty is delivered by answering it.' }, 409);
+
+    // Who will be paid: the named payee, or whoever countersigned an open chit.
+    const payee = stored.chit.payee || stored.countersigner || '';
+    if (!payee) return c.json({ code: 'no-payee', error: 'Nobody has agreed to do this yet, so there is nothing to deliver.' }, 409);
+    if (stored.delivery) return c.json({ ...present(stored, baseUrl, flags), alreadyDelivered: true }, 200);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const record = body as Record<string, unknown>;
+    const signature = record['signature'];
+    const link = typeof record['link'] === 'string' ? record['link'] : '';
+    const note = typeof record['note'] === 'string' ? record['note'] : '';
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'A delivery has to be signed.' }, 400);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseDelivery({ chitId: stored.id, link, note });
+    } catch (error) {
+      return c.json({ code: 'bad-delivery', error: error instanceof Error ? error.message : 'Not a valid delivery.' }, 400);
+    }
+
+    const verification = verifySignedText({
+      text: canonical,
+      publicKeyHex: signature.publicKeyHex,
+      signatureHex: signature.signatureHex,
+      // Only the party who will be paid may say it was delivered.
+      expectedAddress: payee,
+    });
+    if (!verification.ok) {
+      return c.json(
+        { code: verification.failure ?? 'bad-signature', error: verification.detail ?? 'That signature is not from the wallet being paid.' },
+        400,
+      );
+    }
+
+    const written = await store.markDelivered(stored.id, { link, note, at: Date.now(), signature });
+    const updated = await store.get(stored.id);
+    return c.json({ ...present(updated ?? stored, baseUrl, flags), ...(written ? {} : { alreadyDelivered: true }) }, 200);
   });
 
   /**

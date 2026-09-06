@@ -154,7 +154,7 @@ const de: Dict = {
   'Pay {amount} in NIM': '{amount} in NIM zahlen',
   'Paying this accepts these exact words. The money goes straight to the wallet that signed the quote — nothing is held on the way.':
     'Mit der Zahlung nimmst du genau diese Worte an. Das Geld geht direkt an die Wallet, die das Angebot unterschrieben hat – nichts wird unterwegs verwahrt.',
-  'First quote from this wallet.': 'Erstes Angebot von dieser Wallet.',
+  'This wallet has not been paid through chit before.': 'Diese Wallet wurde über chit noch nie bezahlt.',
   'Paid {n} time': '{n}-mal bezahlt worden',
   'Paid {n} times': '{n}-mal bezahlt worden',
   'by {n} client': 'von {n} Kunden',
@@ -222,6 +222,20 @@ const de: Dict = {
   'Still waiting on their payment. Nothing is wrong — it is in your Activity, and you can come back any time.': 'Warte noch auf die Zahlung. Alles in Ordnung – es steht in deinem Verlauf, du kannst jederzeit zurückkommen.',
   'You signed it': 'Du hast unterschrieben',
   'Both signed': 'Beide haben unterschrieben',
+  'You marked it delivered': 'Du hast es als geliefert markiert',
+  'They marked it delivered': 'Als geliefert markiert',
+  'Signed by the wallet being paid, on {when}. It is a record, not a receipt — nothing has been paid because of it.':
+    'Unterschrieben von der Wallet, die bezahlt wird, am {when}. Das ist ein Nachweis, kein Beleg – dadurch wurde nichts gezahlt.',
+  'Open the delivery': 'Die Lieferung öffnen',
+  'Say it is delivered': 'Als geliefert melden',
+  'A link to the work': 'Ein Link zur Arbeit',
+  'https://… (optional)': 'https://… (optional)',
+  'One line about it': 'Ein Satz dazu',
+  'One line about it (optional)': 'Ein Satz dazu (optional)',
+  'Mark it delivered': 'Als geliefert markieren',
+  'Signs one line with your wallet saying you handed the work over. It moves no money and obliges nobody to pay — it is a record, and the other side can see it.':
+    'Unterschreibt mit deiner Wallet eine Zeile, dass du die Arbeit übergeben hast. Es bewegt kein Geld und verpflichtet niemanden zu zahlen – es ist ein Nachweis, und die andere Seite sieht ihn.',
+  'Marked delivered on {when}': 'Als geliefert markiert am {when}',
   'Check now': 'Jetzt prüfen',
 
   /* ---- receipt ---- */

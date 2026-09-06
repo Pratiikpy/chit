@@ -54,6 +54,8 @@ export interface ChitRepository {
   recordEvent(id: string, event: ChitEvent, detail?: string): Promise<void>;
   /** The worker declined an open chit. */
   decline(id: string): Promise<boolean>;
+  /** The party who will be paid signed "here it is". Set once. */
+  markDelivered(id: string, delivery: NonNullable<StoredChit['delivery']>): Promise<boolean>;
   /** Bounty: record the answer and the claiming device. */
   setClaim(id: string, claim: { answer: string; deviceHash: string }): Promise<boolean>;
   /** Bounty: record the payout the pool broadcast. */
@@ -120,6 +122,10 @@ export class SqliteRepository implements ChitRepository {
 
   async decline(id: string) {
     return this.store.decline(id);
+  }
+
+  async markDelivered(id: string, delivery: NonNullable<StoredChit['delivery']>) {
+    return this.store.markDelivered(id, delivery);
   }
 
   async setClaim(id: string, claim: { answer: string; deviceHash: string }) {

@@ -1176,3 +1176,4 @@ h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacin
 .reference p { margin: 0; }
 /* A copy button never wraps and never shrinks. */
 .copyable .btn--inline { flex: 0 0 auto; white-space: nowrap; }
+.receipt__delivered { margin: 0; color: var(--chit-secondary); font-size: 0.875rem; }

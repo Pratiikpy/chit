@@ -44,6 +44,9 @@ export interface ApiChit {
   declined: boolean;
   /** The chit this one answers — a counter-offer, revision, milestone or cancel. Never signed. */
   parent?: string | null;
+  /** "Here it is", signed by the party being paid. Never part of the agreement. */
+  delivery?: { link: string; note: string; at: number } | null;
+  alreadyDelivered?: boolean;
   /** Posted and paid by chit's own bounty key. */
   bounty: boolean;
   /** Countersigned by the labelled demo worker, not a person. */
@@ -183,6 +186,14 @@ export const api = {
   },
 
   /** The worker says no. Recorded, so the payer is not left waiting. */
+  /** Sign "here it is" over the delivery's own canonical form. Obliges nobody to pay. */
+  markDelivered(id: string, signature: { publicKeyHex: string; signatureHex: string }, link: string, note: string) {
+    return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/delivered`, {
+      method: 'POST',
+      body: JSON.stringify({ signature, link, note }),
+    });
+  },
+
   decline(id: string) {
     return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' });
   },

@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { KeyPair } from '@nimiq/core';
-import { canonicalise, chitHash, newNonce, type Chit } from '@chit/core';
+import { canonicalise, canonicaliseDelivery, chitHash, newNonce, type Chit } from '@chit/core';
 import { nimiqSignedMessageDigest } from '@chit/verify';
 import { ChitStore } from '../src/db.ts';
 import { SqliteRepository } from '../src/repository.ts';
@@ -474,4 +474,87 @@ test('⭐ a payment below the floor does not settle, and leaves a settlement-mis
   assert.equal(await watcher.poll(), 1);
   const settled = await store.get(id);
   assert.equal(settled?.settledFrom?.replace(/\s/g, ''), payer.toAddress().toUserFriendlyAddress().replace(/\s/g, ''));
+});
+
+test('⭐ "here it is" is signed by the party being paid, and by nobody else', async () => {
+  const { post, store } = harness();
+  const payer = KeyPair.generate();
+  const worker = KeyPair.generate();
+  const stranger = KeyPair.generate();
+
+  const chit = makeChit(payer.toAddress().toUserFriendlyAddress(), worker.toAddress().toUserFriendlyAddress());
+  const canonical = canonicalise(chit);
+  const created = await post('/api/chits', { canonical, payerSignature: signAsWallet(payer, canonical) });
+  assert.equal(created.status, 201);
+  const id = created.body['id'] as string;
+
+  const deliver = (kp: KeyPair, link = 'https://drive.example/final.mp4', note = '') =>
+    post(`/api/chits/${encodeURIComponent(id)}/delivered`, {
+      signature: signAsWallet(kp, canonicaliseDelivery({ chitId: id, link, note })),
+      link,
+      note,
+    });
+
+  // A stranger's signature is refused even though the canonical text is exactly right.
+  const bad = await deliver(stranger);
+  assert.equal(bad.status, 400);
+
+  // Nor may the payer declare their own job delivered.
+  assert.equal((await deliver(payer)).status, 400);
+
+  const ok = await deliver(worker, 'https://drive.example/final.mp4', 'final cut, 30s');
+  assert.equal(ok.status, 200);
+  const delivery = ok.body['delivery'] as { link: string; note: string; at: number };
+  assert.equal(delivery.link, 'https://drive.example/final.mp4');
+  assert.equal(delivery.note, 'final cut, 30s');
+  assert.equal(typeof delivery.at, 'number');
+  assert.equal(ok.body['settled'], false, 'saying it is delivered pays nobody');
+
+  // Said twice, answered calmly: the first mark stands.
+  const again = await deliver(worker, 'https://drive.example/other.mp4');
+  assert.equal(again.status, 200);
+  assert.equal(again.body['alreadyDelivered'], true);
+  const stored = await store.get(id);
+  assert.equal(stored?.delivery?.link, 'https://drive.example/final.mp4');
+
+  assert.deepEqual((await store.events(id)).map((e) => e.event), ['created', 'delivered']);
+});
+
+test('a delivery link can never be a script URL, however it is signed', async () => {
+  const { post } = harness();
+  const payer = KeyPair.generate();
+  const worker = KeyPair.generate();
+  const chit = makeChit(payer.toAddress().toUserFriendlyAddress(), worker.toAddress().toUserFriendlyAddress());
+  const canonical = canonicalise(chit);
+  const created = await post('/api/chits', { canonical, payerSignature: signAsWallet(payer, canonical) });
+  const id = created.body['id'] as string;
+
+  for (const link of ['javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'file:///etc/passwd']) {
+    const response = await post(`/api/chits/${encodeURIComponent(id)}/delivered`, {
+      signature: signAsWallet(worker, 'anything'),
+      link,
+      note: '',
+    });
+    assert.equal(response.status, 400, `accepted ${link}`);
+    assert.equal(response.body['code'], 'bad-delivery');
+  }
+});
+
+test('nothing can be delivered before anyone has agreed to do it', async () => {
+  const { post } = harness();
+  const payer = KeyPair.generate();
+  const worker = KeyPair.generate();
+  // An open race chit names no payee, so there is nobody whose signature would count.
+  const chit = makeChit(payer.toAddress().toUserFriendlyAddress(), '', { kind: 'race' });
+  const canonical = canonicalise(chit);
+  const created = await post('/api/chits', { canonical, payerSignature: signAsWallet(payer, canonical) });
+  const id = created.body['id'] as string;
+
+  const response = await post(`/api/chits/${encodeURIComponent(id)}/delivered`, {
+    signature: signAsWallet(worker, canonicaliseDelivery({ chitId: id, link: '', note: '' })),
+    link: '',
+    note: '',
+  });
+  assert.equal(response.status, 409);
+  assert.equal(response.body['code'], 'no-payee');
 });

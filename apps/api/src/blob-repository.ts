@@ -66,6 +66,7 @@ interface Wire {
   settledFrom?: string;
   /** Luna as a decimal string — JSON has no bigint. */
   settledLuna?: string;
+  delivery?: { link: string; note: string; at: number; signature: { publicKeyHex: string; signatureHex: string } };
   answer?: string;
   deviceHash?: string;
   payoutTx?: string;
@@ -91,6 +92,7 @@ function toWire(stored: StoredChit, events: EventRecord[], rev: number): Wire {
     ...(stored.settledBlock !== undefined ? { settledBlock: stored.settledBlock } : {}),
     ...(stored.settledFrom !== undefined ? { settledFrom: stored.settledFrom } : {}),
     ...(stored.settledLuna !== undefined ? { settledLuna: stored.settledLuna.toString(10) } : {}),
+    ...(stored.delivery !== undefined ? { delivery: stored.delivery } : {}),
     ...(stored.answer !== undefined ? { answer: stored.answer } : {}),
     ...(stored.deviceHash !== undefined ? { deviceHash: stored.deviceHash } : {}),
     ...(stored.payoutTx !== undefined ? { payoutTx: stored.payoutTx } : {}),
@@ -117,6 +119,7 @@ function fromWire(wire: Wire): { stored: StoredChit; events: EventRecord[]; rev:
       ...(wire.settledBlock !== undefined ? { settledBlock: wire.settledBlock } : {}),
       ...(wire.settledFrom !== undefined ? { settledFrom: wire.settledFrom } : {}),
       ...(wire.settledLuna !== undefined ? { settledLuna: BigInt(wire.settledLuna) } : {}),
+      ...(wire.delivery !== undefined ? { delivery: wire.delivery } : {}),
       ...(wire.answer !== undefined ? { answer: wire.answer } : {}),
       ...(wire.deviceHash !== undefined ? { deviceHash: wire.deviceHash } : {}),
       ...(wire.payoutTx !== undefined ? { payoutTx: wire.payoutTx } : {}),
@@ -435,6 +438,19 @@ export class BlobRepository implements ChitRepository {
     if (!loaded || loaded.stored.declinedAt || loaded.stored.payeeSignature || loaded.stored.settledTx) return false;
     const now = Date.now();
     await this.#save({ ...loaded.stored, declinedAt: now }, [...loaded.events, { event: 'declined', detail: null, at: now }], loaded.rev);
+    return true;
+  }
+
+  async markDelivered(id: string, delivery: NonNullable<StoredChit['delivery']>): Promise<boolean> {
+    const loaded = await this.#loadPatiently(id);
+    // Set once. A second delivery would be a new claim about a fact already recorded, and
+    // this store has no compare-and-swap, so the guard is the value already being there.
+    if (!loaded || loaded.stored.delivery || loaded.stored.settledTx) return false;
+    await this.#save(
+      { ...loaded.stored, delivery },
+      [...loaded.events, { event: 'delivered', detail: delivery.link || null, at: delivery.at }],
+      loaded.rev,
+    );
     return true;
   }
 

@@ -49,6 +49,14 @@ export interface StoredChit {
   /** The worker declined. Set once; nothing else changes after it. */
   declinedAt?: number;
   /**
+   * "Here it is", signed by the party who will be paid.
+   *
+   * An event *about* the chit, never part of it: the agreement's digest is the product, and
+   * a delivery inside it would change every digest ever computed and let one side alter what
+   * both had signed. Set once — a second delivery would be a new claim about a settled fact.
+   */
+  delivery?: { link: string; note: string; at: number; signature: { publicKeyHex: string; signatureHex: string } };
+  /**
    * The chit this one answers: a counter-offer, a revision, a milestone, a mutual cancel.
    *
    * Deliberately **not** part of the signed payload. Adding a field to the canonical text
@@ -70,6 +78,8 @@ export type ChitEvent =
   | 'settlement-mismatch'
   /** Another chit was created in reply to this one: a counter-offer, revision, milestone or cancel. */
   | 'answered'
+  /** The party who will be paid signed "here it is". */
+  | 'delivered'
   | 'bounty-posted'
   | 'bounty-claimed'
   | 'bounty-paid'
@@ -167,6 +177,7 @@ interface ChitRow {
   declined_at: number | null;
   parent: string | null;
   settled_luna: string | null;
+  delivery: string | null;
   created_at: number;
 }
 
@@ -204,6 +215,7 @@ function rowToStored(row: ChitRow): StoredChit {
     ...(row.declined_at !== null ? { declinedAt: row.declined_at } : {}),
     ...(row.parent !== null && row.parent !== undefined ? { parent: row.parent } : {}),
     ...(row.settled_luna !== null && row.settled_luna !== undefined ? { settledLuna: BigInt(row.settled_luna) } : {}),
+    ...(row.delivery ? { delivery: JSON.parse(row.delivery) as NonNullable<StoredChit['delivery']> } : {}),
     createdAt: row.created_at,
   };
 }
@@ -220,7 +232,7 @@ export class ChitStore {
     // Column added after the first deployments. The check makes the ALTER idempotent.
     const cols = (this.#db.prepare('PRAGMA table_info(chits)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('settled_from')) this.#db.exec('ALTER TABLE chits ADD COLUMN settled_from TEXT');
-    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent', 'settled_luna']) {
+    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent', 'settled_luna', 'delivery']) {
       if (!cols.includes(col)) this.#db.exec(`ALTER TABLE chits ADD COLUMN ${col} TEXT`);
     }
     if (!cols.includes('declined_at')) this.#db.exec('ALTER TABLE chits ADD COLUMN declined_at INTEGER');
@@ -358,6 +370,19 @@ export class ChitStore {
 
     if (result.changes === 0) return false;
     this.#recordEvent(id, 'settled', tx.hash, now);
+    return true;
+  }
+
+  /**
+   * Record the delivered mark. Conditional in SQL so two taps, or two tabs, cannot both win:
+   * the first delivery is the one that stands and the second is answered calmly.
+   */
+  markDelivered(id: string, delivery: NonNullable<StoredChit['delivery']>): boolean {
+    const result = this.#db
+      .prepare('UPDATE chits SET delivery = ? WHERE id = ? AND delivery IS NULL')
+      .run(JSON.stringify(delivery), id);
+    if (result.changes === 0) return false;
+    this.#recordEvent(id, 'delivered', delivery.link || null, delivery.at);
     return true;
   }
 

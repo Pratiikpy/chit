@@ -357,7 +357,7 @@ try {
   await payer.page.locator('button', { hasText: 'Pay' }).first().click();
 
   // The payment lands on chain; the watcher notices; the screen moves on its own.
-  await payer.page.waitForSelector('text=Paid', { timeout: 45_000 });
+  await payer.page.waitForSelector('.receipt', { timeout: 45_000 });
   await shot(payer.page, '09-settled-payer');
 
   check('the wallet was asked to pay', settlingTx !== null);
@@ -496,7 +496,7 @@ try {
   check('the client is told that paying accepts it', /Paying this accepts/i.test(await client.page.locator('body').innerText()));
 
   await client.page.locator('button', { hasText: 'Pay' }).first().click();
-  await client.page.waitForSelector('text=Paid', { timeout: 45_000 });
+  await client.page.waitForSelector('.receipt', { timeout: 45_000 });
   await shot(client.page, '19-quote-paid-client-dark');
   check('the payment went to the worker who signed the quote', quoteSettling?.recipient?.replace(/\s/g, '') === qWorker.address.replace(/\s/g, ''));
   check('and carried the quote digest as its memo', quoteSettling?.data === quoteId);
@@ -633,7 +633,7 @@ try {
   await shot(judge.page, '27-demo-worker-signed');
   check('the pay screen says plainly it was the demo worker', /demo worker/i.test(await judge.page.locator('body').innerText()));
   await judge.page.locator('button', { hasText: 'Pay' }).first().click();
-  await judge.page.waitForSelector('text=Paid', { timeout: 45_000 });
+  await judge.page.waitForSelector('.receipt', { timeout: 45_000 });
   check('the judge paid the demo worker', judgeSettling?.recipient?.replace(/\s/g, '') === DEMO_KEY.toAddress().toUserFriendlyAddress().replace(/\s/g, ''));
 
   /* -------------------------------------------------- decline */
@@ -658,6 +658,60 @@ try {
   await dPayer.page.waitForSelector('text=They declined', { timeout: 20_000 });
   await shot(dPayer.page, '29-declined-payer');
   check('the payer is told they declined and offered a new one', /Send a new one/.test(await dPayer.page.locator('body').innerText()));
+
+  /* -------------------------------------------------- "here it is" */
+  console.log('\n8h. The worker says it is delivered, and the payer sees it before paying');
+  const hPayerKey = KeyPair.generate();
+  const hWorkerKey = KeyPair.generate();
+  let hSettling = null;
+  const hPayer = await makeUser('deliver-payer', hPayerKey, 'light', async (tx) => {
+    hSettling = tx;
+    rpc.inject(tx.recipient, { from: tx.from, to: tx.recipient, value: Number(tx.value), recipientData: tx.data });
+    return `tx_deliver_${Date.now()}`;
+  });
+  await hPayer.page.goto(WEB, { waitUntil: 'networkidle' });
+  await hPayer.page.locator('button', { hasText: 'paying' }).click();
+  await hPayer.page.locator('textarea').fill('$25 to cut a teaser from the raw footage by Sunday');
+  await hPayer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+  await hPayer.page.locator('button', { hasText: 'Sign it' }).click();
+  await hPayer.page.waitForSelector('text=Send this to them', { timeout: 20_000 });
+  const deliverUrl = hPayer.page.url();
+  const deliverId = decodeURIComponent(new URL(deliverUrl).pathname.replace('/c/', ''));
+
+  const hWorker = await makeUser('deliver-worker', hWorkerKey, 'light', async () => 'unused');
+  await hWorker.page.goto(deliverUrl, { waitUntil: 'networkidle' });
+  await hWorker.page.waitForSelector('text=agree this with you', { timeout: 20_000 });
+  await hWorker.page.locator('button', { hasText: 'Sign it' }).click();
+  await hWorker.page.waitForSelector('text=You signed it', { timeout: 20_000 });
+  check('a worker who has signed can say the work is delivered', /Say it is delivered/.test(await hWorker.page.locator('body').innerText()));
+
+  await hWorker.page.locator('summary', { hasText: 'Say it is delivered' }).click();
+  await hWorker.page.locator('input[type=url]').fill('https://drive.example/teaser.mp4');
+  await hWorker.page.locator('input[type=text]').first().fill('45 seconds, colour graded');
+  await hWorker.page.locator('button', { hasText: 'Mark it delivered' }).click();
+  await hWorker.page.waitForSelector('text=You marked it delivered', { timeout: 20_000 });
+  await shot(hWorker.page, '35-delivered-worker');
+
+  const deliveredApi = await (await fetch(`${API}/api/chits/${encodeURIComponent(deliverId)}`)).json();
+  check('the delivery is recorded with its link and note', deliveredApi.delivery?.link === 'https://drive.example/teaser.mp4' && deliveredApi.delivery?.note === '45 seconds, colour graded');
+  check('and it paid nobody', deliveredApi.settled === false);
+  check('the history records it between signing and paying', (deliveredApi.events ?? []).map((e) => e.event).join(',') === 'created,countersigned,delivered');
+
+  await hPayer.page.goto(deliverUrl, { waitUntil: 'networkidle' });
+  await hPayer.page.waitForSelector('text=Time to pay', { timeout: 20_000 });
+  await shot(hPayer.page, '36-pay-after-delivery');
+  const payerSees = await hPayer.page.locator('body').innerText();
+  check('the payer sees it was delivered before they decide', /they marked it delivered/i.test(payerSees));
+  check('with the link to the work', /Open the delivery/.test(payerSees));
+  check('and is told plainly that it obliges nobody', /nothing has been paid because of it/i.test(payerSees));
+
+  // A stranger cannot claim someone else's work was delivered.
+  const forged = await fetch(`${API}/api/chits/${encodeURIComponent(deliverId)}/delivered`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ signature: { publicKeyHex: '00'.repeat(32), signatureHex: '00'.repeat(64) }, link: '', note: '' }),
+  });
+  check('a forged delivery is refused', forged.status === 400 || forged.status === 200 && (await forged.json()).alreadyDelivered === true);
 
   /* -------------------------------------------------- counter-offer, and half up front */
   console.log('\n8g. A worker asks for a change instead of signing; and a deposit is half of the job');

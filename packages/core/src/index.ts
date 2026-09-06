@@ -22,6 +22,15 @@ export {
 } from './canonical.ts';
 
 export {
+  DELIVERY_CANONICAL_VERSION,
+  MAX_DELIVERY_LINK_BYTES,
+  canonicaliseDelivery,
+  checkDeliveryLink,
+  parseDelivery,
+  type Delivery,
+} from './delivery.ts';
+
+export {
   CHIT_MEMO_PREFIX,
   NIMIQ_MAX_DATA_BYTES,
   chitDigest,
