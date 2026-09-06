@@ -35,7 +35,7 @@ import {
   type WalletDetection,
   type WalletSession,
 } from './wallet.ts';
-import { NIMIQ_PAY_SITE, isPhone, nimiqPayDeepLink, nimpayOpenLink } from './links.ts';
+import { isPhone, nimiqPayDeepLink, storeLink } from './links.ts';
 import { nimRow, termsEditor } from './terms-editor.ts';
 import { watchUntil } from './watch.ts';
 import { readChainTransaction } from './chain.ts';
@@ -188,8 +188,10 @@ function walletBanner(detection: WalletDetection, link: string): HTMLElement | n
   if (detection.tier === 'demo') {
     return note(t('Demo mode — signatures here are for show and will not verify. Open in Nimiq Pay to sign for real.'), 'warn');
   }
-  const open = el('a', { class: 'btn', attrs: { href: nimpayOpenLink(link) }, children: [icon('wallet', 'icon--sm'), document.createTextNode(t('Open in Nimiq Pay'))] });
-  const get = el('a', { class: 'btn btn--quiet', text: t('Get Nimiq Pay'), attrs: { href: NIMIQ_PAY_SITE, target: '_blank', rel: 'noopener' } });
+  // The scheme link opens the installed app; the https "open" route 404s for an unregistered
+  // host (see links.ts), so it is not offered. The store link is the device's own store.
+  const open = el('a', { class: 'btn', attrs: { href: nimiqPayDeepLink(link) }, children: [icon('wallet', 'icon--sm'), document.createTextNode(t('Open in Nimiq Pay'))] });
+  const get = el('a', { class: 'btn btn--quiet', text: t('Get Nimiq Pay'), attrs: { href: storeLink(), target: '_blank', rel: 'noopener' } });
   if (isPhone()) {
     return el('div', {
       class: 'stack stack--tight',
