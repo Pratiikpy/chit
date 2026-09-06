@@ -662,6 +662,71 @@ try {
   await shot(dPayer.page, '29-declined-payer');
   check('the payer is told they declined and offered a new one', /Send a new one/.test(await dPayer.page.locator('body').innerText()));
 
+  /* -------------------------------------------------- the receipt as an invoice */
+  console.log('\n8i. The receipt becomes an invoice a bookkeeper would accept');
+  // The worker who was paid in section 3 fills in who they are, once, on this device.
+  await worker.page.goto(`${WEB}/c/${encodeURIComponent(chitId)}`, { waitUntil: 'networkidle' });
+  await worker.page.waitForSelector('.receipt', { timeout: 20_000 });
+  check('a paid worker is offered somewhere to put their details', /Add your details to the invoice/.test(await worker.page.locator('body').innerText()));
+
+  await worker.page.locator('summary', { hasText: 'Add your details to the invoice' }).click();
+  await worker.page.locator('[data-identity=name]').fill('Mara Oduya');
+  await worker.page.locator('[data-identity=address]').fill('12 Ojuelegba Road\nSurulere, Lagos\nNigeria');
+  await worker.page.locator('[data-identity=contact]').fill('mara@example.com');
+  await worker.page.locator('[data-identity=taxNote]').fill('No VAT charged — small supplier');
+  await worker.page.locator('button', { hasText: 'Save on this device' }).click();
+  await worker.page.waitForSelector('text=Your invoice details', { timeout: 20_000 });
+
+  // Nothing about the person may leave the device.
+  const serverCopy = await (await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}`)).json();
+  check('the details never reach the server', !JSON.stringify(serverCopy).includes('Mara Oduya'));
+
+  // On screen the invoice head stays hidden; on paper it is the head of the document.
+  const onScreen = await worker.page.locator('body').innerText();
+  check('and are not shown on the screen either', !onScreen.includes('Ojuelegba'));
+  const printed = await worker.page.evaluate(() => {
+    const el = document.querySelector('.invoice');
+    if (!el) return null;
+    return { text: el.textContent ?? '', screenDisplay: getComputedStyle(el).display };
+  });
+  check('the invoice head exists, hidden on screen', printed !== null && printed.screenDisplay === 'none');
+  check('and carries name, address and the chit id', !!printed && /Mara Oduya/.test(printed.text) && /Ojuelegba/.test(printed.text) && printed.text.includes(chitId));
+  const taxLine = await worker.page.evaluate(() => document.querySelector('.invoice__note')?.textContent ?? null);
+  check('with the tax line the country needs', taxLine === 'No VAT charged — small supplier');
+
+  // Print emulation is the only honest way to check a print stylesheet.
+  await worker.page.emulateMedia({ media: 'print' });
+  const printVisible = await worker.page.evaluate(() => ({
+    invoice: getComputedStyle(document.querySelector('.invoice')).display,
+    note: getComputedStyle(document.querySelector('.invoice__note')).display,
+    actions: getComputedStyle(document.querySelector('.screen__actions') ?? document.body).display,
+  }));
+  check('in print the invoice head appears', printVisible.invoice !== 'none' && printVisible.note !== 'none');
+  check('and the buttons do not', printVisible.actions === 'none');
+  // Printed from a dark-mode phone, the paper must still be white and the ink black.
+  const printPaper = await worker.page.evaluate(() => {
+    const receiptEl = document.querySelector('.receipt');
+    const deal = document.querySelector('.receipt .deal');
+    return {
+      body: getComputedStyle(document.body).backgroundColor,
+      receipt: getComputedStyle(receiptEl).backgroundColor,
+      ink: getComputedStyle(deal).color,
+      reference: document.querySelector('.copyable__text')?.textContent ?? '',
+    };
+  });
+  check('paper is white even from a dark-mode phone', /255,\s*255,\s*255/.test(printPaper.body) && /255,\s*255,\s*255/.test(printPaper.receipt), `${printPaper.body} / ${printPaper.receipt}`);
+  check('and the ink is black', /rgb\(0,\s*0,\s*0\)/.test(printPaper.ink), printPaper.ink);
+  check('the reference prints its value, not just its label', printPaper.reference.startsWith('chit1:'), printPaper.reference);
+  // A printed link that does not say where it goes is a dead end, and this one is the only
+  // route from paper back to the payment.
+  const printedHref = await worker.page.evaluate(() => {
+    const link = [...document.querySelectorAll('.receipt a[href]')].find((a) => a.href.includes('nimiq.watch'));
+    return link ? getComputedStyle(link, '::after').content : null;
+  });
+  check('and the explorer link prints its address', !!printedHref && printedHref.includes('nimiq.watch'), printedHref ?? 'no link');
+  await shot(worker.page, '38-invoice-print');
+  await worker.page.emulateMedia({ media: 'screen' });
+
   /* -------------------------------------------------- "here it is" */
   console.log('\n8h. The worker says it is delivered, and the payer sees it before paying');
   const hPayerKey = KeyPair.generate();

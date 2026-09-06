@@ -41,6 +41,7 @@ import { watchUntil } from './watch.ts';
 import { readChainTransaction } from './chain.ts';
 import { identicon } from './identicon.ts';
 import { labelFor, setLabel } from './labels.ts';
+import { hasIdentity, readIdentity, writeIdentity, type Identity } from './identity.ts';
 import {
   button,
   copyable,
@@ -1505,6 +1506,103 @@ function receipt(chit: ApiChit, me: string | null, isWorker: boolean): HTMLEleme
   });
 }
 
+/**
+ * The block that turns a receipt into an invoice, and only appears on paper.
+ *
+ * Most chits sit inside the small-invoice reliefs — Germany's §33 UStDV at €250 and the UK's
+ * VAT Notice 700 §16.6.1 at £250 — which ask for the supplier's name and address, the date,
+ * what the service was and the total with a rate or an exemption note. Nothing about the
+ * customer, no number, no VAT identifier. The deal line is the service, the settlement date
+ * is the date, the amount is the total; the only thing chit does not otherwise know is who
+ * the freelancer is, and that is typed once and kept on the device.
+ *
+ * It renders `hidden` on screen and visible in print, so nothing about it is stored, sent or
+ * shown to the other party.
+ */
+function invoiceHead(chit: ApiChit): HTMLElement | null {
+  const identity = readIdentity();
+  if (!hasIdentity(identity)) return null;
+  const lines: Array<Node | null> = [
+    el('div', { class: 'invoice__name', text: identity.name }),
+    identity.address ? el('div', { class: 'invoice__address', text: identity.address }) : null,
+    identity.contact ? el('div', { class: 'invoice__address', text: identity.contact }) : null,
+    identity.taxId ? el('div', { class: 'invoice__address', text: identity.taxId }) : null,
+  ];
+  return el('div', {
+    class: 'invoice',
+    attrs: { 'aria-hidden': 'true' },
+    children: [
+      el('div', { class: 'invoice__from', children: lines.filter((n) => n !== null) }),
+      el('div', {
+        class: 'invoice__meta',
+        children: [
+          el('div', { class: 'invoice__title', text: t('Invoice') }),
+          chit.settledAt ? el('div', { text: formatDate(chit.settledAt) }) : null,
+          el('div', { class: 'mono', text: chit.id }),
+        ].filter((n) => n !== null),
+      }),
+    ],
+  });
+}
+
+/** The tax sentence, printed under the total. Free text, because the wording is local. */
+function invoiceTaxNote(): HTMLElement | null {
+  const { taxNote } = readIdentity();
+  return taxNote ? el('p', { class: 'invoice__note', text: taxNote, attrs: { 'aria-hidden': 'true' } }) : null;
+}
+
+/**
+ * Where the freelancer types who they are. On the device, once — and the panel says so,
+ * because a product whose promise is that it stores nothing about you has to be believed.
+ */
+function identityPanel(onSaved: () => void): HTMLElement {
+  const current = readIdentity();
+  const field = (key: keyof Identity, label: string, placeholder: string, multiline = false): HTMLElement =>
+    el(multiline ? 'textarea' : 'input', {
+      class: 'field',
+      attrs: {
+        ...(multiline ? { rows: 3 } : { type: 'text' }),
+        autocomplete: 'off',
+        'aria-label': label,
+        placeholder,
+        'data-identity': key,
+        ...(multiline ? {} : { value: current[key] }),
+      },
+      ...(multiline ? { text: current[key] } : {}),
+    });
+
+  const name = field('name', t('Your name or trading name'), t('Your name or trading name'));
+  const address = field('address', t('Address'), t('Address'), true);
+  const taxId = field('taxId', t('Tax or VAT number, if you have one'), t('Tax or VAT number, if you have one'));
+  const contact = field('contact', t('Email or website'), t('Email or website'));
+  const taxNote = field('taxNote', t('Tax line, if your country needs one'), t('e.g. VAT exempt under §19 UStG'), true);
+
+  const save = button(t('Save on this device'), () => {
+    writeIdentity({
+      name: (name as HTMLInputElement).value,
+      address: (address as HTMLTextAreaElement).value,
+      taxId: (taxId as HTMLInputElement).value,
+      contact: (contact as HTMLInputElement).value,
+      taxNote: (taxNote as HTMLTextAreaElement).value,
+    });
+    onSaved();
+  }, 'quiet', 'check');
+
+  return details(
+    hasIdentity(current) ? t('Your invoice details') : t('Add your details to the invoice'),
+    [
+      el('p', { class: 'small secondary', text: t('Printed on the invoice, kept in this browser, and never sent to chit or shown to the other side. Most small invoices need only a name, an address and a line about tax.') }),
+      name,
+      address,
+      contact,
+      taxId,
+      taxNote,
+      save,
+    ],
+    { cls: 'help' },
+  );
+}
+
 function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWorker: boolean): void {
   const me = rememberedAddress();
   const dir = isWorker ? 'earning' : 'paying';
@@ -1543,13 +1641,17 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
         lateBadge(chit) ? el('div', { class: 'row-actions', children: [lateBadge(chit)] }) : null,
         testnetBanner(chit),
         chit.bounty ? note(t('A bounty, paid by chit for your answer: “{answer}”', { answer: chit.answer ?? '' }), 'good') : null,
+        // Printed only: the head a bookkeeper needs, above the receipt a person reads.
+        invoiceHead(chit),
         receipt(chit, me, isWorker),
+        invoiceTaxNote(),
         note(
           isWorker
             ? t('That is yours. This receipt is the agreement — anyone can check it against the chain, with no account.')
             : t('This receipt is the agreement. Anyone can check it against the chain, with no account.'),
           'good',
         ),
+        isWorker ? identityPanel(() => settledScreen(chit, navigate, isPayer, isWorker)) : null,
         isWorker ? cashOutHelp() : null,
       ],
       actions: actions.filter((node): node is HTMLElement => node !== null),

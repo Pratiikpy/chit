@@ -1124,17 +1124,60 @@ h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacin
 /* ---------- print: the receipt as a document ---------- */
 
 @media print {
+  /*
+   * Paper is white whatever the phone is set to.
+   *
+   * Printing from a dark-mode device produced a dark-grey invoice with pale text: the tokens
+   * are what everything is painted with, so print has to redefine the tokens, not just the
+   * body. Found by emulating print media in the journey rather than by printing something.
+   */
+  :root, :root[data-theme='dark'] {
+    --chit-page: #ffffff;
+    --chit-surface: #ffffff;
+    --chit-raised: #ffffff;
+    --chit-subtle: #f2f2f2;
+    --chit-ink: #000000;
+    --chit-secondary: #333333;
+    --chit-muted: #444444;
+    --chit-faint: #999999;
+    --chit-line: #bbbbbb;
+    --chit-line-strong: #999999;
+    --chit-accent: #000000;
+    --chit-accent-text: #000000;
+    --chit-accent-soft: #ffffff;
+    --chit-good: #000000;
+    --chit-good-soft: #ffffff;
+    --chit-warn: #000000;
+    --chit-warn-soft: #ffffff;
+    --chit-bad: #000000;
+    --chit-bad-soft: #ffffff;
+    --shadow-raised: none;
+  }
   html, body { background: #fff; color: #000; }
-  .topbar, .screen__actions, .screen__sentinel, .help, .qr, .btn, .status, .copyable { display: none !important; }
+  .topbar, .screen__actions, .screen__sentinel, .help, .qr, .btn, .status, .owed__nudge { display: none !important; }
+  /* The notes are reassurance for a person on a screen; on paper they are ink and noise. */
+  .note, .receipt__final, .receipt__kept, .badge { display: none !important; }
   .details { display: block; }
   .details > summary { display: none; }
   .details__body { display: block; }
   .screen { max-width: none; padding: 0; min-height: 0; }
   .screen--enter { animation: none; }
   .card, .card--flat, .receipt { break-inside: avoid; border-color: #bbb; box-shadow: none; background: #fff; }
-  .badge, .pill { border-color: #bbb; background: #fff; }
+  .receipt { border: 0; padding: 0; }
+  .pill { border-color: #bbb; background: #fff; }
   .receipt__check .icon path { animation: none; }
-  a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #555; }
+  /*
+   * The reference is a copy button on screen and a string on paper — printing the label with
+   * no value beside it, which is what the button collapsed to, is worse than not printing it.
+   */
+  .copyable { border: 0; padding: 0; min-height: 0; }
+  .copyable__text { overflow: visible; white-space: normal; overflow-wrap: anywhere; color: #000; }
+  /*
+   * A link on paper is a dead end unless it says where it goes, so every one prints its
+   * destination — including "View on nimiq.watch", which is the only route from a printed
+   * invoice back to the payment it describes.
+   */
+  a[href]::after { content: " " attr(href); font-size: 0.75em; color: #555; overflow-wrap: anywhere; }
 }
 
 /* ---------- receipt additions ---------- */
@@ -1192,3 +1235,31 @@ h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacin
 .owed .who__text { min-width: 0; }
 .owed .who__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .owed .list__side { align-items: flex-end; gap: 6px; }
+
+/* ---------- the invoice, which exists only on paper ---------- */
+
+/*
+ * Hidden on screen, shown in print. The receipt is what a person looks at; the invoice head
+ * and the tax line are what a bookkeeper needs, and putting them on screen would make the
+ * screen worse for everyone who never prints.
+ */
+.invoice, .invoice__note { display: none; }
+
+@media print {
+  .invoice {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin: 0 0 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #bbb;
+  }
+  .invoice__name { font-size: 1.125rem; font-weight: 600; }
+  .invoice__address { color: #444; font-size: 0.875rem; white-space: pre-line; }
+  .invoice__meta { text-align: right; font-size: 0.8125rem; color: #444; }
+  .invoice__title { font-size: 1rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #000; }
+  .invoice__note { display: block; margin: 14px 0 0; font-size: 0.8125rem; color: #333; }
+  /* On paper the identicon is a decoration that costs ink and says nothing. */
+  .idn, .receipt__check { display: none !important; }
+}
