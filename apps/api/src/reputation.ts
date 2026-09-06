@@ -132,6 +132,138 @@ export function ledger(address: string, chits: StoredChit[], currentBlock: numbe
   };
 }
 
+/**
+ * The public record for one wallet: the page a freelancer sends instead of a marketplace profile.
+ *
+ * Everything on it is derived from settled payments and from statements signed by the two
+ * parties to those payments. There is no field its subject can write, which is the difference
+ * that matters — a marketplace profile is a bio next to a rating the marketplace owns, and
+ * this is neither.
+ *
+ * Only settled work appears. A chit that was signed and never paid says nothing good or bad
+ * about the worker, so it is left out rather than counted; the payer's own record is where a
+ * broken promise to pay shows up, and it shows up there against the payer.
+ */
+export interface Profile {
+  address: string;
+  ledger: Ledger;
+  /** When this wallet's first payment settled. Null before there is one. */
+  since: number | null;
+  /** Reviews written *about* this address, newest first. */
+  reviews: ProfileReview[];
+  /** The mean of those ratings, or null when there are none. Never rounded away from the truth. */
+  averageRating: number | null;
+  /** Settled work this address was paid for, newest first. */
+  work: ProfileWork[];
+}
+
+export interface ProfileReview {
+  chitId: string;
+  /** The one line the two of them agreed, so a rating is read next to what it was for. */
+  chitText: string;
+  from: 'payer' | 'payee';
+  by: string;
+  rating: number;
+  text: string;
+  txHash: string;
+  at: number;
+  signature: { publicKeyHex: string; signatureHex: string };
+}
+
+export interface ProfileWork {
+  chitId: string;
+  text: string;
+  amountMinor: string;
+  currency: string;
+  luna: string;
+  settledAt: number | null;
+  txHash: string;
+  /** The other wallet. A stranger can see the count of distinct clients is real. */
+  counterparty: string | null;
+}
+
+/**
+ * Build the public record from the chits an address appears on.
+ *
+ * One pass, no storage, no cache: the inputs are the same rows the receipts are drawn from,
+ * so the page cannot drift from the receipts behind it.
+ */
+export function profile(address: string, chits: StoredChit[], currentBlock: number): Profile {
+  const reviews: ProfileReview[] = [];
+  const work: ProfileWork[] = [];
+  let since: number | null = null;
+
+  for (const stored of chits) {
+    const settled = typeof stored.settledTx === 'string' && stored.settledTx.length > 0;
+    if (!settled) continue;
+
+    const workerAddress = stored.chit.payee || stored.countersigner;
+    const payerAddress = stored.chit.kind === 'quote' ? stored.settledFrom : stored.chit.payer;
+    const isWorker = sameAddress(workerAddress, address);
+    const isPayer = sameAddress(payerAddress, address);
+    if (!isWorker && !isPayer) continue;
+
+    if (typeof stored.settledAt === 'number' && (since === null || stored.settledAt < since)) since = stored.settledAt;
+
+    // A review is *about* the party the author is not.
+    for (const review of stored.reviews ?? []) {
+      if (!sameAddress(review.about, address)) continue;
+      reviews.push({
+        chitId: stored.id,
+        chitText: stored.chit.text,
+        from: review.from,
+        by: review.by,
+        rating: review.rating,
+        text: review.text,
+        txHash: review.txHash,
+        at: review.at,
+        signature: review.signature,
+      });
+    }
+
+    if (isWorker) {
+      work.push({
+        chitId: stored.id,
+        text: stored.chit.text,
+        amountMinor: stored.chit.amountMinor.toString(10),
+        currency: stored.chit.currency,
+        luna: (stored.settledLuna ?? stored.chit.luna).toString(10),
+        settledAt: stored.settledAt ?? null,
+        txHash: stored.settledTx!,
+        counterparty: payerAddress ?? null,
+      });
+    }
+  }
+
+  reviews.sort((a, b) => b.at - a.at);
+  work.sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0));
+
+  const averageRating = reviews.length === 0
+    ? null
+    : reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+
+  return { address, ledger: ledger(address, chits, currentBlock), since, reviews, averageRating, work };
+}
+
+/** The wire form for a profile. JSON has no bigint, and the ledger carries two. */
+export function presentProfile(record: Profile): {
+  address: string;
+  ledger: ReturnType<typeof presentLedger>;
+  since: number | null;
+  reviews: ProfileReview[];
+  averageRating: number | null;
+  work: ProfileWork[];
+} {
+  return {
+    address: record.address,
+    ledger: presentLedger(record.ledger),
+    since: record.since,
+    reviews: record.reviews,
+    averageRating: record.averageRating,
+    work: record.work,
+  };
+}
+
 /** The wire form: JSON has no bigint. */
 export function presentLedger(record: Ledger): {
   address: string;

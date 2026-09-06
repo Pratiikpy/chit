@@ -43,6 +43,7 @@ import type {
   EventRecord,
   Signature,
   StoredChit,
+  StoredReview,
 } from './repository.ts';
 
 /** Blob pathnames need no `chit1:` prefix — the digest alone is unique. */
@@ -67,6 +68,7 @@ interface Wire {
   /** Luna as a decimal string — JSON has no bigint. */
   settledLuna?: string;
   delivery?: { link: string; note: string; at: number; signature: { publicKeyHex: string; signatureHex: string } };
+  reviews?: StoredReview[];
   answer?: string;
   deviceHash?: string;
   payoutTx?: string;
@@ -93,6 +95,7 @@ function toWire(stored: StoredChit, events: EventRecord[], rev: number): Wire {
     ...(stored.settledFrom !== undefined ? { settledFrom: stored.settledFrom } : {}),
     ...(stored.settledLuna !== undefined ? { settledLuna: stored.settledLuna.toString(10) } : {}),
     ...(stored.delivery !== undefined ? { delivery: stored.delivery } : {}),
+    ...(stored.reviews !== undefined ? { reviews: stored.reviews } : {}),
     ...(stored.answer !== undefined ? { answer: stored.answer } : {}),
     ...(stored.deviceHash !== undefined ? { deviceHash: stored.deviceHash } : {}),
     ...(stored.payoutTx !== undefined ? { payoutTx: stored.payoutTx } : {}),
@@ -120,6 +123,7 @@ function fromWire(wire: Wire): { stored: StoredChit; events: EventRecord[]; rev:
       ...(wire.settledFrom !== undefined ? { settledFrom: wire.settledFrom } : {}),
       ...(wire.settledLuna !== undefined ? { settledLuna: BigInt(wire.settledLuna) } : {}),
       ...(wire.delivery !== undefined ? { delivery: wire.delivery } : {}),
+      ...(wire.reviews !== undefined ? { reviews: wire.reviews } : {}),
       ...(wire.answer !== undefined ? { answer: wire.answer } : {}),
       ...(wire.deviceHash !== undefined ? { deviceHash: wire.deviceHash } : {}),
       ...(wire.payoutTx !== undefined ? { payoutTx: wire.payoutTx } : {}),
@@ -449,6 +453,21 @@ export class BlobRepository implements ChitRepository {
     await this.#save(
       { ...loaded.stored, delivery },
       [...loaded.events, { event: 'delivered', detail: delivery.link || null, at: delivery.at }],
+      loaded.rev,
+    );
+    return true;
+  }
+
+  async addReview(id: string, review: StoredReview): Promise<boolean> {
+    const loaded = await this.#loadPatiently(id);
+    if (!loaded) return false;
+    const existing = loaded.stored.reviews ?? [];
+    // One per side. This store has no compare-and-swap, so the guard is the value already
+    // being there — the same discipline `markDelivered` uses, with the same honest limit.
+    if (existing.some((r) => r.from === review.from)) return false;
+    await this.#save(
+      { ...loaded.stored, reviews: [...existing, review] },
+      [...loaded.events, { event: 'reviewed', detail: `${review.from} ${review.rating}/5`, at: review.at }],
       loaded.rev,
     );
     return true;

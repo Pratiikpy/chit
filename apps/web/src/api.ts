@@ -47,6 +47,14 @@ export interface ApiChit {
   /** "Here it is", signed by the party being paid. Never part of the agreement. */
   delivery?: { link: string; note: string; at: number } | null;
   alreadyDelivered?: boolean;
+  /**
+   * What each side said afterwards, signed over the settling transaction.
+   *
+   * The signature travels with the words on purpose: it is what makes the review checkable
+   * without this service, and therefore what makes it worth anything.
+   */
+  reviews?: ApiReview[];
+  alreadyReviewed?: boolean;
   /** Posted and paid by chit's own bounty key. */
   bounty: boolean;
   /** Countersigned by the labelled demo worker, not a person. */
@@ -65,6 +73,19 @@ export interface ApiChit {
     countersigned: boolean;
     settled: boolean;
   };
+}
+
+export interface ApiReview {
+  from: 'payer' | 'payee';
+  /** The wallet that wrote it. */
+  by: string;
+  /** The wallet it is about. */
+  about: string;
+  rating: number;
+  text: string;
+  txHash: string;
+  at: number;
+  signature: { publicKeyHex: string; signatureHex: string };
 }
 
 export type ApiResult<T> =
@@ -204,6 +225,30 @@ export const api = {
     );
   },
 
+  /**
+   * What an address holds, in Luna.
+   *
+   * Used for one thing: warning somebody they are short before the wallet sheet opens.
+   * `known: false` is a normal answer and means the client says nothing at all — a hint
+   * that cannot be given is not an error worth showing anybody.
+   */
+  /** Sign a review of the other side, bound to the payment that settled the chit. */
+  review(id: string, signature: { publicKeyHex: string; signatureHex: string }, rating: number, text: string) {
+    return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ signature, rating, text }),
+    });
+  },
+
+  /** The public record for one wallet: settled work, signed reviews, the computed ledger. */
+  profile(address: string) {
+    return request<ProfileView>(`/api/addresses/${encodeURIComponent(address)}/profile`);
+  },
+
+  balance(address: string) {
+    return request<{ known: boolean; luna?: string }>(`/api/balance/${encodeURIComponent(address)}`);
+  },
+
   decline(id: string) {
     return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' });
   },
@@ -226,4 +271,23 @@ export interface LedgerView {
   address: string;
   asPayer: { settled: number; medianPaySeconds: number | null; leftUnpaid: number; awaiting: number };
   asWorker: { settled: number; settledLuna: string; distinctPayers: number; keptLuna: string };
+}
+
+/** The public record for one wallet — everything on it derived, none of it writable by its subject. */
+export interface ProfileView {
+  address: string;
+  ledger: LedgerView;
+  since: number | null;
+  reviews: Array<ApiReview & { chitId: string; chitText: string }>;
+  averageRating: number | null;
+  work: Array<{
+    chitId: string;
+    text: string;
+    amountMinor: string;
+    currency: string;
+    luna: string;
+    settledAt: number | null;
+    txHash: string;
+    counterparty: string | null;
+  }>;
 }

@@ -19,6 +19,7 @@
  */
 
 import { init, requestDeviceIdentifier } from '@nimiq/mini-app-sdk';
+import { t } from './i18n.ts';
 import {
   MockWallet,
   NimiqPayWallet,
@@ -64,8 +65,13 @@ export class WalletUnavailableError extends Error {
 
 /** A provider call that never answered. The wallet may have been backgrounded mid-dialog. */
 export class WalletTimeoutError extends Error {
+  /**
+   * `what` is the step, in the app's own language: "Signing", "Paying". The whole sentence is
+   * built here rather than at the point of failure so a German user is never handed half an
+   * English message, which is what happened while the copy lived in the call sites.
+   */
   constructor(what: string) {
-    super(`${what} — Nimiq Pay did not answer. Open the wallet and try again.`);
+    super(t('{step} — Nimiq Pay did not answer. Open the wallet and try again.', { step: what }));
     this.name = 'WalletTimeoutError';
   }
 }
@@ -233,25 +239,66 @@ class GuardedWallet implements ChitWallet {
   }
 
   getBlockNumber(): Promise<number> {
-    return withTimeout(this.#inner.getBlockNumber(), 10_000, 'Reading the chain height');
+    return withTimeout(this.#inner.getBlockNumber(), 10_000, t('Reading the chain height'));
   }
 
   isConsensusEstablished(): Promise<boolean> {
-    return withTimeout(this.#inner.isConsensusEstablished(), 10_000, 'Checking sync');
+    return withTimeout(this.#inner.isConsensusEstablished(), 10_000, t('Checking sync'));
   }
 
   getAddress(): Promise<string> {
-    return withTimeout(this.#inner.getAddress(), 60_000, 'Sharing your address');
+    return withTimeout(this.#inner.getAddress(), 60_000, t('Sharing your address'));
   }
 
   signText(text: string): Promise<NormalisedSignature> {
-    return withTimeout(this.#inner.signText(text), 120_000, 'Signing');
+    return withTimeout(this.#inner.signText(text), 120_000, t('Signing'));
   }
 
   pay(request: PaymentRequest): Promise<PaymentResult> {
-    return withTimeout(this.#inner.pay(request), 180_000, 'Paying');
+    return withTimeout(this.#inner.pay(request), 180_000, t('Paying'));
   }
 }
+
+/*
+ * The failures a wallet actually reports, and what to say instead.
+ *
+ * A provider's own text is written for whoever wrote the provider: "user rejected the
+ * request", "insufficient funds for gas", "Failed to fetch". Shown as-is it tells a person
+ * nothing they can act on, is always in English however the app is set, and — worst — reads
+ * as though chit broke when in most cases nothing is wrong at all.
+ *
+ * So each known shape is matched on the wire text and answered with a sentence that says
+ * what happened and what to do next. Anything unrecognised still falls through to the raw
+ * message: a wrong guess about an error is worse than an honest quotation of one.
+ */
+const WALLET_FAILURES: Array<{ match: RegExp; message: string; tone: 'calm' | 'bad' }> = [
+  {
+    // Every provider spells a decline differently, and none of them is an error.
+    match: /reject|denied|declin|cancel|abort/i,
+    message: 'You cancelled. Nothing was sent.',
+    tone: 'calm',
+  },
+  {
+    match: /insufficient|not enough|balance too low/i,
+    message: 'Your wallet does not hold enough NIM for this. Top it up and try again — nothing was sent.',
+    tone: 'calm',
+  },
+  {
+    match: /failed to fetch|network|offline|econn|timed? ?out|timeout/i,
+    message: 'Your phone could not reach the network. Nothing was sent — check your connection and try again.',
+    tone: 'calm',
+  },
+  {
+    match: /consensus|not synced|syncing/i,
+    message: 'Nimiq Pay is still catching up with the chain. Give it a few seconds and try again.',
+    tone: 'calm',
+  },
+  {
+    match: /locked|unlock|password/i,
+    message: 'Your wallet is locked. Unlock Nimiq Pay and try again.',
+    tone: 'calm',
+  },
+];
 
 /**
  * Turn any wallet failure into a sentence for a person.
@@ -261,7 +308,7 @@ class GuardedWallet implements ChitWallet {
  */
 export function explain(error: unknown): { message: string; tone: 'calm' | 'bad' } {
   if (error instanceof SignatureDeclinedError) {
-    return { message: 'You cancelled. Nothing was sent.', tone: 'calm' };
+    return { message: t('You cancelled. Nothing was sent.'), tone: 'calm' };
   }
   if (error instanceof WalletUnavailableError) {
     return { message: error.message, tone: 'calm' };
@@ -271,13 +318,16 @@ export function explain(error: unknown): { message: string; tone: 'calm' | 'bad'
   }
   if (error instanceof SignatureShapeError) {
     return {
-      message: 'Your wallet returned a signature chit could not read. Please report this — it is our bug, not yours.',
+      message: t('Your wallet returned a signature chit could not read. Please report this — it is our bug, not yours.'),
       tone: 'bad',
     };
   }
-  if (error instanceof WalletOperationError) {
-    return { message: error.message, tone: 'bad' };
+  if (error instanceof Error) {
+    const known = WALLET_FAILURES.find((f) => f.match.test(error.message));
+    if (known) return { message: t(known.message), tone: known.tone };
+    // Unrecognised. Quote it rather than invent a friendlier meaning for it, and say whose
+    // words they are so nobody reads a provider's jargon as chit's own explanation.
+    return { message: t('Your wallet reported: {message}', { message: error.message }), tone: 'bad' };
   }
-  if (error instanceof Error) return { message: error.message, tone: 'bad' };
-  return { message: 'Something went wrong.', tone: 'bad' };
+  return { message: t('Something went wrong. Nothing was signed and nothing was sent.'), tone: 'bad' };
 }

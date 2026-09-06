@@ -20,10 +20,10 @@
  *   and their own locale's notation, with the NIM figure beside it rather than hidden.
  */
 
-import { canonicaliseDelivery, chitHash, fromBase64Url, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
+import { canonicaliseDelivery, canonicaliseReview, chitHash, fromBase64Url, isRecordOnly, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
 import QrCreator from 'qr-creator';
-import { api, type ApiChit, type LedgerView } from './api.ts';
-import { buildDraft, BLOCKS_PER_DAY, fieldsFromTerms, isReady, quoteExpired, type DraftFields, type Quote } from './compose.ts';
+import { api, type ApiChit, type ApiReview, type LedgerView, type ProfileView } from './api.ts';
+import { buildDraft, buildRecordChit, BLOCKS_PER_DAY, fieldsFromTerms, isReady, quoteExpired, type DraftFields, type Quote } from './compose.ts';
 import {
   checkNetwork,
   connectWallet,
@@ -94,6 +94,17 @@ function formatDate(ms: number): string {
   return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/**
+ * The day alone, for a list.
+ *
+ * A minute-precise timestamp beside a name and an amount is three competing pieces of
+ * detail in a 390px row, and the minute is the one nobody reads. The receipt behind the row
+ * still carries the full time.
+ */
+function formatDay(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+
 function formatDuration(seconds: number): string {
   if (seconds < 90) return t('a minute');
   if (seconds < 2 * 3600) return `${Math.round(seconds / 60)} ${t('minutes')}`;
@@ -134,6 +145,11 @@ function displayLink(url: string): string {
 
 function chitPath(id: string): string {
   return `/c/${encodeURIComponent(id)}`;
+}
+
+/** The public record for one wallet. Spaces stripped, so the link is the same for both forms. */
+function profilePath(address: string): string {
+  return `/p/${encodeURIComponent(address.replace(/\s/g, ''))}`;
 }
 
 function fiat(chit: ApiChit): string {
@@ -373,6 +389,27 @@ function factRows(chit: ApiChit, options: { settled?: boolean } = {}): HTMLEleme
   return details(t('Details'), rows);
 }
 
+/**
+ * The deadline has passed and nothing is paid.
+ *
+ * Said out loud rather than left as "Due: passed" inside a fold, because the two people
+ * concerned have different next moves and neither of them is "wait longer". It is worded
+ * without blame on purpose: a date passing is not a broken promise, and the payer may simply
+ * not have opened the link yet. Nothing is void — a late chit is still signable and still
+ * payable, and the receipt would carry its own late badge.
+ */
+function pastDeadline(chit: ApiChit, isWorker: boolean): HTMLElement | null {
+  const current = chit.currentBlock ?? 0;
+  if (current <= 0 || chit.settled || chit.declined) return null;
+  if (chit.chit.deadlineBlock >= current) return null;
+  return note(
+    isWorker
+      ? t('The date on this has passed and it is still unpaid. Nothing is lost and nothing expired — it can still be paid. Send them a nudge, or write a new one at a number that works now.')
+      : t('The date on this has passed. It can still be signed and still be paid; if it no longer fits, write a new one instead of leaving this open.'),
+    'warn',
+  );
+}
+
 /** Due, as a sentence, above the details. */
 function dueRow(chit: ApiChit): HTMLElement | null {
   const current = chit.currentBlock ?? 0;
@@ -389,7 +426,18 @@ function stripLine(text: string, glyph: IconName, warn = false): HTMLElement {
  * The payer's record, above the worker's Sign button — the one moment it matters.
  * Computed from settled payments only. A wallet with no history reads as new, never as bad.
  */
-async function payerStrip(payer: string, attached: string): Promise<HTMLElement> {
+/** A record strip that opens the wallet's public page. The strip states it; the page proves it. */
+function stripLink(text: string, glyph: IconName, address: string, navigate: Navigate, warn = false): HTMLElement {
+  const node = el('button', {
+    class: `strip strip--link${warn ? ' strip--warn' : ''}`,
+    attrs: { type: 'button' },
+    children: [icon(glyph), el('span', { text }), icon('chevron-right', 'icon--sm strip__chevron')],
+  });
+  node.addEventListener('click', () => navigate(profilePath(address)));
+  return node;
+}
+
+async function payerStrip(payer: string, attached: string, navigate: Navigate): Promise<HTMLElement> {
   const result = await api.ledger(payer);
   if (!result.ok) return stripLine(t('Could not load this wallet’s record.'), 'info');
   const p = result.value.asPayer;
@@ -397,16 +445,23 @@ async function payerStrip(payer: string, attached: string): Promise<HTMLElement>
   const parts = [count(p.settled, 'Paid {n} chit', 'Paid {n} chits')];
   if (p.medianPaySeconds !== null) parts.push(t('usually within {d}', { d: formatDuration(p.medianPaySeconds) }));
   parts.push(p.leftUnpaid === 0 ? t('none left unpaid') : t('{n} left unpaid', { n: p.leftUnpaid }));
-  return stripLine(parts.join(' · '), 'shield', p.leftUnpaid > 0);
+  // Openable, because a summary is a claim and the record behind it is the evidence. The
+  // worker deciding whether to sign is the one moment that difference is worth a tap.
+  return stripLink(parts.join(' · '), 'shield', payer, navigate, p.leftUnpaid > 0);
 }
 
 /** The worker's record, for a client about to pay a quote. */
-async function workerStrip(worker: string): Promise<HTMLElement | null> {
+async function workerStrip(worker: string, navigate: Navigate): Promise<HTMLElement | null> {
   const result = await api.ledger(worker);
   if (!result.ok) return null;
   const w = result.value.asWorker;
   if (w.settled === 0) return stripLine(t('This wallet has not been paid through chit before.'), 'info');
-  return stripLine(`${count(w.settled, 'Paid {n} time', 'Paid {n} times')} · ${count(w.distinctPayers, 'by {n} client', 'by {n} clients')}`, 'shield');
+  return stripLink(
+    `${count(w.settled, 'Paid {n} time', 'Paid {n} times')} · ${count(w.distinctPayers, 'by {n} client', 'by {n} clients')}`,
+    'shield',
+    worker,
+    navigate,
+  );
 }
 
 /** "Paid after the deadline" — labelled on the receipt, never enforced. */
@@ -821,6 +876,11 @@ export async function chitScreen(id: string, navigate: Navigate): Promise<void> 
   const isPayer = chit.chit.kind === 'quote' ? sameAddress(me, chit.settledFrom) : sameAddress(me, chit.chit.payer);
   const isWorker = sameAddress(me, chit.chit.payee) || sameAddress(me, chit.payTo);
 
+  // A chit with no money in it is a different object with a different ending: it is finished
+  // when the second signature lands, and every payment screen would be lying to both of them.
+  if (isRecordOnly({ amountMinor: BigInt(chit.chit.amountMinor), luna: BigInt(chit.chit.luna) })) {
+    return recordScreen(chit, navigate, sameAddress(me, chit.chit.payer), detection);
+  }
   if (chit.settled) return settledScreen(chit, navigate, isPayer, isWorker);
   if (chit.declined) return declinedScreen(chit, navigate, isPayer);
   if (chit.bounty && !chit.countersigned) return bountyScreen(chit, detection, navigate);
@@ -1017,6 +1077,7 @@ function shareScreen(chit: ApiChit, detection: WalletDetection, navigate: Naviga
         deal(chit.chit.text),
         shareBlock(link),
         state,
+        pastDeadline(chit, false),
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me }), dueRow(chit), factRows(chit)] }),
         walletBanner(detection, link),
         messages,
@@ -1068,7 +1129,7 @@ function acceptQuoteScreen(chit: ApiChit, detection: WalletDetection, navigate: 
   const payButton = button(t('Pay {amount} in NIM', { amount: fiat(chit) }), () => void payFlow({ chit, recipient: chit.chit.payee, button: payButton, messages, navigate }), 'primary');
   if (detection.tier === 'none') payButton.disabled = true;
   const strip = el('div', { class: 'slot', children: [skeleton('line')] });
-  void workerStrip(chit.chit.payee).then((node) => (node ? strip.replaceChildren(node) : strip.remove()));
+  void workerStrip(chit.chit.payee, navigate).then((node) => (node ? strip.replaceChildren(node) : strip.remove()));
   mount(
     screen({
       header: topBar(navigate),
@@ -1098,7 +1159,7 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
   if (detection.tier === 'none') signButton.disabled = true;
 
   const strip = el('div', { class: 'slot', children: [skeleton('line')] });
-  void payerStrip(chit.chit.payer, fiat(chit)).then((node) => strip.replaceChildren(node));
+  void payerStrip(chit.chit.payer, fiat(chit), navigate).then((node) => strip.replaceChildren(node));
 
   async function go(): Promise<void> {
     await withBusy(signButton, t('Waiting for your wallet…'), async () => {
@@ -1155,6 +1216,7 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
         testnetBanner(chit),
         deal(chit.chit.text),
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me, nameable: true }), dueRow(chit), factRows(chit)] }),
+        pastDeadline(chit, true),
         strip,
         el('p', { class: 'small secondary', text: t('Signing means you agree to these exact words. It does not move any money — they pay after you sign, and the payment goes to the wallet you sign with.') }),
         /*
@@ -1246,6 +1308,36 @@ async function payFlow(input: { chit: ApiChit; recipient: string; button: HTMLBu
         luna = BigInt(fresh.luna);
         messages.append(note(t('The rate moved since this was signed. Keeping the agreed {amount} whole is now {nim}.', { amount: fiat(chit), nim: nim(luna.toString(10)) }), 'calm'));
       }
+      /*
+       * Say "you are short" here rather than letting the wallet sheet say it.
+       *
+       * The Nimiq provider has no `getBalance`, so the app cannot ask the wallet — the
+       * server reads the public chain instead. Getting this wrong in the pessimistic
+       * direction would block a payment that would have worked, so it only ever *warns*:
+       * an unreadable balance says nothing, and the button stays live either way. Nimiq
+       * transactions are feeless, so the shortfall is exactly the difference.
+       */
+      if (session.address) {
+        const held = await api.balance(session.address);
+        if (held.ok && held.value.known && held.value.luna !== undefined) {
+          const have = BigInt(held.value.luna);
+          if (have < luna) {
+            messages.append(
+              note(
+                t('Your wallet holds {have}. This needs {need} — {short} more. Top up and try again; nothing has been sent.', {
+                  have: nim(have.toString(10)),
+                  need: nim(luna.toString(10)),
+                  short: nim((luna - have).toString(10)),
+                }),
+                'warn',
+              ),
+            );
+            messages.append(noNimHelp());
+            return;
+          }
+        }
+      }
+
       await session.wallet.pay({ recipient, luna, data: chit.id });
       const waiting = status(t('Sent. Watching the chain…'), 'waiting');
       messages.append(waiting);
@@ -1285,7 +1377,7 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
   // is a freelancer who delivered and never got paid; the mirror of that is a client paying a
   // wallet they know nothing about.
   const strip = el('div', { class: 'slot', children: [skeleton('line')] });
-  if (payTo) void workerStrip(payTo).then((node) => (node ? strip.replaceChildren(node) : strip.remove()));
+  if (payTo) void workerStrip(payTo, navigate).then((node) => (node ? strip.replaceChildren(node) : strip.remove()));
   mount(
     screen({
       header: topBar(navigate),
@@ -1295,6 +1387,7 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
         testnetBanner(chit),
         deal(chit.chit.text),
         demoNote,
+        pastDeadline(chit, false),
         deliveredBlock(chit, false),
         el('div', {
           class: 'card',
@@ -1308,6 +1401,9 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
         el('p', { class: 'small secondary', text: t('The exact NIM is priced when you tap Pay, so the agreed amount stays whole. It goes straight to their wallet — nothing is held on the way, and a payment cannot be reversed.') }),
         walletBanner(detection, chit.shareUrl),
         noNimHelp(),
+        // Last, and folded. The thing you reach for when something has gone sideways, not
+        // part of the ordinary path — putting it above the deal would say otherwise.
+        amendPanel(chit, navigate, false),
         messages,
       ],
       actions: [payButton, button(t('Later'), () => navigate('/'), 'plain')],
@@ -1420,9 +1516,13 @@ function awaitingPaymentScreen(chit: ApiChit, navigate: Navigate, isWorker: bool
         testnetBanner(chit),
         deal(chit.chit.text),
         state,
+        pastDeadline(chit, isWorker),
         deliveredBlock(chit, isWorker),
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me, nameable: isWorker }), dueRow(chit), factRows(chit)] }),
         isWorker && !chit.delivery ? deliverPanel(chit, navigate) : null,
+        // Last, and folded. It is the thing you reach for when something has gone sideways,
+        // not part of the ordinary path, and putting it above the deal would say otherwise.
+        amendPanel(chit, navigate, isWorker),
       ],
       actions: [button(t('Check now'), () => navigate(chitPath(chit.id)), 'quiet')],
     }),
@@ -1633,6 +1733,135 @@ function identityPanel(onSaved: () => void): HTMLElement {
   );
 }
 
+/* ------------------------------------------------------------------ reviews */
+
+/** Five stars, drawn. Filled ones are earned; the number is also in the label beside them. */
+function stars(rating: number, label?: string): HTMLElement {
+  const wrap = el('span', {
+    class: 'stars',
+    attrs: { role: 'img', 'aria-label': label ?? t('{n} out of 5', { n: String(rating) }) },
+  });
+  for (let i = 1; i <= 5; i++) wrap.append(icon('star', i <= rating ? 'star--on' : ''));
+  return wrap;
+}
+
+/** One review as a stranger reads it: the rating, who wrote it, when, then the words. */
+function reviewRow(review: ApiReview, me: string | null, context?: string): HTMLElement {
+  return el('div', {
+    class: 'review',
+    children: [
+      el('div', {
+        class: 'review__head',
+        children: [
+          stars(review.rating),
+          who(review.by, me),
+          el('span', { class: 'small secondary', text: formatDate(review.at) }),
+        ],
+      }),
+      review.text ? el('p', { class: 'review__text', text: review.text }) : null,
+      context ? el('p', { class: 'review__for', text: t('For: {line}', { line: context }) }) : null,
+    ].filter((node) => node !== null),
+  });
+}
+
+/**
+ * What was said about this deal, and — for the two people in it — the way to say it.
+ *
+ * The panel is deliberately available to both sides and to neither more than the other. A
+ * marketplace where only clients rate is a marketplace where the client is never the problem,
+ * and every complaint in the research corpus about being ghosted after delivery is about a
+ * client nobody could warn anyone else about.
+ */
+function reviewPanel(chit: ApiChit, navigate: Navigate, isParty: boolean): HTMLElement | null {
+  const me = rememberedAddress();
+  const existing = chit.reviews ?? [];
+  const mine = me ? existing.find((r) => sameAddress(r.by, me)) : undefined;
+  const blocks: HTMLElement[] = existing.map((r) => reviewRow(r, me));
+
+  if (!isParty || mine || !chit.settledTx) {
+    if (blocks.length === 0) return null;
+    return el('div', {
+      class: 'card card--pad stack stack--tight',
+      children: [el('h2', { text: t('What they said') }), ...blocks],
+    });
+  }
+
+  let rating = 0;
+  const messages = el('div', { class: 'stack stack--tight' });
+  const buttons: HTMLButtonElement[] = [];
+  const rate = el('div', { class: 'rate', attrs: { role: 'radiogroup', 'aria-label': t('Your rating') } });
+  for (let i = 1; i <= 5; i++) {
+    const star = el('button', {
+      class: 'rate__star',
+      attrs: { type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': t('{n} out of 5', { n: String(i) }) },
+      children: [icon('star')],
+    });
+    star.addEventListener('click', () => {
+      rating = i;
+      // Every star up to the chosen one fills, which is how a five-star control is read.
+      buttons.forEach((b, index) => b.setAttribute('aria-checked', index < i ? 'true' : 'false'));
+      send.disabled = false;
+    });
+    buttons.push(star);
+    rate.append(star);
+  }
+
+  const words = el('input', {
+    class: 'field',
+    attrs: {
+      type: 'text',
+      maxlength: 200,
+      autocomplete: 'off',
+      'aria-label': t('One line, if you want to add one'),
+      placeholder: t('One line, if you want to add one (optional)'),
+    },
+  });
+
+  const send = button(t('Sign this review'), () => void go(), 'quiet', 'check');
+  send.disabled = true;
+
+  async function go(): Promise<void> {
+    if (rating < 1 || !chit.settledTx) return;
+    await withBusy(send, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const text = words.value.trim();
+        // Signed over the settling transaction, so the review cannot be moved to another deal
+        // and cannot exist without one. The server rebuilds these exact bytes from its record.
+        const canonical = canonicaliseReview({ chitId: chit.id, txHash: chit.settledTx!.toLowerCase(), rating, text });
+        const signature = await session.wallet.signText(canonical);
+        const result = await api.review(chit.id, signature, rating, text);
+        if (!result.ok) {
+          messages.append(note(result.error, 'warn'));
+          return;
+        }
+        navigate(chitPath(chit.id));
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
+      }
+    });
+  }
+
+  return el('div', {
+    class: 'card card--pad stack stack--tight',
+    children: [
+      el('h2', { text: existing.length > 0 ? t('What they said') : t('How did it go?') }),
+      ...blocks,
+      el('p', {
+        class: 'small secondary',
+        text: t('Signed by your wallet over this payment, so it cannot be bought, faked or written by anyone else. It goes on their public record and it cannot be taken down — including by us.'),
+      }),
+      rate,
+      words,
+      send,
+      messages,
+    ],
+  });
+}
+
 function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWorker: boolean): void {
   const me = rememberedAddress();
   const dir = isWorker ? 'earning' : 'paying';
@@ -1657,8 +1886,18 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
     'quiet',
     'arrow-right',
   );
+  /*
+   * The moment the record is worth sending is the moment it just grew. A freelancer who has
+   * been paid has one more line of proof than they had a minute ago, and this is the only
+   * link in the product a stranger who has never heard of chit has a reason to open.
+   */
+  const mine = isWorker ? (chit.payTo ?? me) : chit.chit.kind === 'quote' ? chit.settledFrom : chit.chit.payer;
+  const record = mine
+    ? button(isWorker ? t('Your public record') : t('Their record'), () => navigate(profilePath(isWorker ? mine : (chit.payTo ?? mine))), 'quiet', 'shield')
+    : null;
   const actions: Array<HTMLElement | null> = [
     link ? button(t('Open the receipt'), () => navigate(link), 'primary', 'receipt') : null,
+    record,
     nextStep,
     again,
     el('div', { class: 'row-actions', children: [print, button(t('Start another'), () => navigate('/'), 'plain')] }),
@@ -1681,6 +1920,7 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
             : t('This receipt is the agreement. Anyone can check it against the chain, with no account.'),
           'good',
         ),
+        reviewPanel(chit, navigate, isPayer || isWorker),
         isWorker ? identityPanel(() => settledScreen(chit, navigate, isPayer, isWorker)) : null,
         isWorker ? cashOutHelp() : null,
       ],
@@ -1908,6 +2148,26 @@ export async function activityScreen(address: string, navigate: Navigate): Promi
 
   const header: HTMLElement[] = [party(address, t('Wallet'), { me })];
   if (led.ok) header.push(...ledgerRows(led.value));
+  // Activity is the private list — drafts, unpaid work, everything. The record is the page
+  // that can be sent to a stranger, so the way to it belongs here and nowhere in between.
+  const record = button(t('Your public record'), () => navigate(profilePath(address)), 'quiet', 'shield');
+  /*
+   * Once a year this is the only thing anybody wants from a freelance platform, and it is
+   * usually the thing that is missing, behind a plan, or a PDF that has to be retyped.
+   *
+   * A plain link, not a button that builds a file: inside a Mini App's WebView a blob
+   * download is not reliably allowed to happen, and a download that silently does nothing is
+   * worse than none. This one can be opened, shared, or handed straight to a spreadsheet.
+   */
+  const exportLink = el('a', {
+    class: 'btn btn--quiet',
+    attrs: {
+      href: `/api/addresses/${encodeURIComponent(address)}/export.csv`,
+      download: `chit-${address.replace(/\s/g, '').slice(0, 12)}.csv`,
+      rel: 'noopener',
+    },
+    children: [icon('receipt', 'icon--sm'), document.createTextNode(t('Everything paid, as a spreadsheet'))],
+  });
   const owedIds = new Set(owedToMe.map((c) => c.id));
   const rows = chits.filter((c) => !owedIds.has(c.id)).map((chit) => {
     const state = statusOf(chit);
@@ -1920,7 +2180,12 @@ export async function activityScreen(address: string, navigate: Navigate): Promi
           class: 'list__main',
           children: [
             el('div', { class: 'list__text', text: chit.chit.text }),
-            el('div', { class: 'list__meta', children: other ? [who(other, me), document.createTextNode(` · ${formatDate(chit.createdAt)}`)] : [document.createTextNode(formatDate(chit.createdAt))] }),
+            el('div', {
+              class: 'list__meta',
+              children: other
+                ? [who(other, me), el('span', { class: 'list__when', text: formatDay(chit.createdAt) })]
+                : [el('span', { class: 'list__when', text: formatDay(chit.createdAt) })],
+            }),
           ],
         }),
         el('div', { class: 'list__side', children: [el('div', { class: 'list__amount', text: fiat(chit) }), el('span', { class: state.cls, text: state.label })] }),
@@ -1936,6 +2201,7 @@ export async function activityScreen(address: string, navigate: Navigate): Promi
       title: t('Activity'),
       body: [
         el('div', { class: 'card', children: header }),
+        el('div', { class: 'row-actions', children: [record, exportLink] }),
         owedToMe.length > 0
           ? el('div', {
               class: 'stack stack--tight',
@@ -1975,6 +2241,392 @@ function ledgerRows(led: LedgerView): HTMLElement[] {
     out.push(row(t('As a payer'), parts.join(' · ')));
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ agreements with no payment */
+
+/**
+ * Two things that happen to real jobs and that a payment rail alone cannot record.
+ *
+ * **The scope changed.** It is the most common way a small job goes wrong: one more round,
+ * one extra size, "while you're in there". Nobody re-signs anything, and the argument later
+ * is about whose memory of the conversation is right. Here it is one line, signed by both,
+ * pointing at the chit it amends — the amount is untouched, because changing the amount is a
+ * different act with its own screen.
+ *
+ * **It is off.** An open chit that will never be paid is worse than a refusal: from the
+ * outside it is indistinguishable from a client who has not got round to it, and it sits in
+ * both people's lists forever. A mutual cancel closes it with both names on the closing.
+ *
+ * Neither carries money, and neither can. They are ordinary chits with the amount set to
+ * nothing, which is why nothing about the format, the digest or the signing had to change.
+ */
+function amendPanel(chit: ApiChit, navigate: Navigate, isWorker: boolean): HTMLElement | null {
+  const other = isWorker ? chit.chit.payer : (chit.payTo ?? chit.chit.payee);
+  if (!other || !chit.countersigned || chit.settled || chit.declined) return null;
+
+  const messages = el('div', { class: 'stack stack--tight' });
+  const words = el('input', {
+    class: 'field',
+    attrs: {
+      type: 'text',
+      maxlength: 160,
+      autocomplete: 'off',
+      'aria-label': t('What changed'),
+      placeholder: t('e.g. one extra round of edits, same price'),
+    },
+  });
+
+  const amend = button(t('Sign the change'), () => void go(words.value.trim(), false), 'quiet', 'pen');
+  const cancel = button(t('Call it off'), () => void go('', true), 'plain', 'x');
+  amend.disabled = true;
+  words.addEventListener('input', () => (amend.disabled = words.value.trim().length < 3));
+
+  async function go(text: string, calling: boolean): Promise<void> {
+    const target = calling ? cancel : amend;
+    await withBusy(target, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const draft = buildRecordChit({
+          text: calling ? t('Called off by agreement — {line}', { line: chit.chit.text }) : t('Change agreed — {line}', { line: text }),
+          signer: session.address,
+          other,
+          chain: chit.chit.chain,
+          currency: chit.chit.currency,
+          // The height the server last saw. A record with no money in it never has to be
+          // priced, so this is only what dates it.
+          currentBlock: chit.currentBlock && chit.currentBlock > 0 ? chit.currentBlock : chit.chit.rateBlock,
+        });
+        const signature = await session.wallet.signText(draft.canonical);
+        const created = await api.createChit(draft.canonical, signature, chit.id);
+        if (!created.ok) {
+          messages.append(note(created.error, 'bad'));
+          return;
+        }
+        navigate(chitPath(created.value.id));
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
+      }
+    });
+  }
+
+  return details(
+    t('Something changed?'),
+    [
+      el('p', {
+        class: 'small secondary',
+        text: t('Write what you both agreed and sign it. It moves no money and does not alter the chit above — it is a second signed line pointing at it, so the record shows the change instead of the argument.'),
+      }),
+      words,
+      amend,
+      el('p', {
+        class: 'small secondary',
+        text: t('Or close it. A chit nobody will pay is worse left open — this records that you both called it off, with both names on it.'),
+      }),
+      cancel,
+      messages,
+    ],
+    { cls: 'help' },
+  );
+}
+
+/** The shared body of a payment-free chit: what it says, what it answers, who signed. */
+function recordBody(chit: ApiChit, me: string | null, navigate: Navigate): Array<HTMLElement | null> {
+  const parent = chit.parent;
+  return [
+    testnetBanner(chit),
+    deal(chit.chit.text),
+    parent ? button(t('Open the chit this answers'), () => navigate(chitPath(parent)), 'quiet', 'receipt') : null,
+    el('div', {
+      class: 'card',
+      children: [
+        party(chit.chit.payer, t('Signed by'), { me }),
+        chit.countersigned ? party(chit.payTo ?? chit.chit.payee, t('And by'), { me }) : null,
+      ].filter((n) => n !== null),
+    }),
+  ];
+}
+
+/**
+ * A payment-free chit, in its three states.
+ *
+ * Deliberately its own screen family rather than a variant of the payment ones: every word
+ * on those screens is about money arriving, and a screen that says "waiting for payment"
+ * about something that will never be paid is worse than no screen at all.
+ */
+function recordScreen(chit: ApiChit, navigate: Navigate, isMine: boolean, detection: WalletDetection): void {
+  const me = rememberedAddress();
+  const isCancel = /^(Called off by agreement|Einvernehmlich abgesagt)/i.test(chit.chit.text);
+  const messages = el('div', { class: 'stack stack--tight' });
+
+  const parentId = chit.parent ?? null;
+  if (chit.countersigned) {
+    mount(
+      screen({
+        header: topBar(navigate),
+        title: isCancel ? t('Called off, by both of you') : t('The change is on the record'),
+        body: [
+          ...recordBody(chit, me, navigate),
+          note(
+            isCancel
+              ? t('Both of you signed this. Nothing is owed and nothing is open — the original chit stays exactly as it was signed, with this beside it.')
+              : t('Both of you signed this. The original chit is untouched; this sits beside it, so what you agreed later is on the record too.'),
+            'good',
+          ),
+        ],
+        actions: [
+          parentId ? button(t('Back to the chit'), () => navigate(chitPath(parentId)), 'primary', 'receipt') : null,
+          button(t('Start another'), () => navigate('/'), 'plain'),
+        ].filter((n) => n !== null),
+      }),
+    );
+    return;
+  }
+
+  if (isMine) {
+    const link = chit.shareUrl;
+    const poller = watchUntil({
+      poll: async () => {
+        const latest = await api.getChit(chit.id);
+        return latest.ok ? latest.value : null;
+      },
+      done: (latest) => latest.countersigned,
+      onDone: () => navigate(chitPath(chit.id)),
+    });
+    mount(
+      screen({
+        header: topBar(navigate),
+        title: t('Send this to them'),
+        body: [
+          el('p', { class: 'lead', text: t('Nothing is being paid here. They open it, read the same words you signed, and sign too.') }),
+          ...recordBody(chit, me, navigate),
+          shareBlock(link),
+          status(t('Waiting for them to sign.'), 'waiting'),
+        ],
+        actions: [...shareActions(link, isCancel ? t('Calling this off') : t('A change to sign'), chit.chit.text), button(t('Done for now'), () => navigate('/'), 'plain')],
+      }),
+    );
+    onLeave(poller.stop);
+    return;
+  }
+
+  const sign = button(t('Sign it'), () => void go(), 'primary', 'check');
+  if (detection.tier === 'none') sign.disabled = true;
+  async function go(): Promise<void> {
+    await withBusy(sign, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const signature = await session.wallet.signText(chit.canonical);
+        const result = await api.countersign(chit.id, signature);
+        if (!result.ok) {
+          messages.append(note(result.error, 'bad'));
+          return;
+        }
+        navigate(chitPath(chit.id));
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
+      }
+    });
+  }
+
+  mount(
+    screen({
+      header: topBar(navigate),
+      title: isCancel ? t('They want to call it off') : t('They want to agree a change'),
+      body: [
+        ...recordBody(chit, me, navigate),
+        el('p', {
+          class: 'small secondary',
+          text: isCancel
+            ? t('Signing this closes the job for both of you. No money moves, and nothing that was already paid is affected.')
+            : t('Signing means you agree to these exact words as well. No money moves, and the chit this answers is not altered.'),
+        }),
+        walletBanner(detection, chit.shareUrl),
+        messages,
+      ],
+      actions: [sign, button(t('Not now'), () => navigate('/'), 'plain')],
+    }),
+  );
+}
+
+/* ------------------------------------------------------------------ the public record */
+
+/**
+ * The page a freelancer sends instead of a marketplace profile.
+ *
+ * It is the highest-leverage object in the product for two reasons that turn out to be the
+ * same reason. It is the reputation — settled payments, distinct clients, signed reviews,
+ * every line openable by a stranger and checkable against the chain. And it is the growth
+ * loop — the only thing here somebody has a reason to send to a person who has never heard
+ * of chit, because it says something about *them* that no other link can say.
+ *
+ * Nothing on it is writable by its subject. There is no bio, no headline, no gig list, no
+ * badge that can be bought. That is not an omission: a page whose owner can write on it is
+ * a page a stranger has to discount, and the whole value here is that they do not have to.
+ */
+export async function profileScreen(address: string, navigate: Navigate): Promise<void> {
+  const settle = loadingSoon(() => skeletonScreen(navigate));
+  const result = await api.profile(address);
+  settle();
+  if (!result.ok) {
+    mount(
+      problemScreen(navigate, {
+        title: t('Record'),
+        text: result.error,
+        tone: result.code === 'offline' ? 'calm' : 'bad',
+        actions: [button(t('Try again'), () => void profileScreen(address, navigate), 'quiet')],
+      }),
+    );
+    return;
+  }
+
+  const view = result.value;
+  const me = rememberedAddress();
+  const isMe = sameAddress(me, address);
+  const link = `${window.location.origin}/p/${encodeURIComponent(address.replace(/\s/g, ''))}`;
+  const worker = view.ledger.asWorker;
+  const payer = view.ledger.asPayer;
+  const hasRecord = worker.settled > 0 || payer.settled > 0;
+
+  if (!hasRecord) {
+    mount(
+      screen({
+        header: topBar(navigate),
+        title: t('Record'),
+        body: [
+          el('div', { class: 'card', children: [party(address, t('Wallet'), { me, full: true, nameable: true })] }),
+          emptyState({
+            icon: 'receipt',
+            title: isMe ? t('Nothing here yet') : t('No settled work on this wallet'),
+            text: isMe
+              ? t('The moment a chit you are part of is paid, it appears here — with the amount, the date, and anything either side said about it. Nothing on this page is written by you.')
+              : t('This wallet has not been paid through chit, and has not paid anyone. That is not a bad sign or a good one; it is a wallet with no record yet.'),
+            ...(isMe ? { action: button(t('Write a chit'), () => navigate('/'), 'primary', 'pen') } : {}),
+          }),
+        ],
+      }),
+    );
+    return;
+  }
+
+  /*
+   * The headline, in the order a stranger reads it: how much has actually been paid to this
+   * wallet, then how many different people paid it. The second number is what makes the
+   * first one mean anything — a large total from a single payer is a wallet paying itself,
+   * and saying so plainly is more useful than hiding it behind a badge.
+   */
+  const headline: HTMLElement[] = [];
+  if (worker.settled > 0) {
+    headline.push(
+      hero({
+        label: t('Paid to this wallet'),
+        amount: nimRound(worker.settledLuna),
+        sub: `${count(worker.settled, '{n} job', '{n} jobs')} · ${count(worker.distinctPayers, 'from {n} client', 'from {n} clients')}`,
+      }),
+    );
+  }
+  if (view.averageRating !== null) {
+    headline.push(
+      el('div', {
+        class: 'card card--pad row-actions',
+        children: [
+          stars(Math.round(view.averageRating), t('{n} out of 5', { n: view.averageRating.toFixed(1) })),
+          el('span', {
+            class: 'secondary',
+            text: `${view.averageRating.toFixed(1)} · ${count(view.reviews.length, '{n} review', '{n} reviews')}`,
+          }),
+        ],
+      }),
+    );
+  }
+
+  const facts: HTMLElement[] = [];
+  if (view.since !== null) facts.push(row(t('First paid'), formatDay(view.since)));
+  // Only on your own record. "What a marketplace would have taken" is a thing to know about
+  // yourself; on a page you send a client it is an argument they did not ask for.
+  if (isMe && worker.settled > 0) facts.push(row(t('Kept'), `${nimRound(worker.keptLuna)} — ${t('a 20% marketplace cut')}`, 'num'));
+  if (payer.settled > 0 || payer.leftUnpaid > 0) {
+    const parts = [t('paid {n}', { n: payer.settled })];
+    if (payer.medianPaySeconds !== null) parts.push(t('usually within {d}', { d: formatDuration(payer.medianPaySeconds) }));
+    parts.push(payer.leftUnpaid === 0 ? t('none left unpaid') : t('{n} left unpaid', { n: payer.leftUnpaid }));
+    facts.push(row(t('As a client'), parts.join(' · ')));
+  }
+
+  const workList = view.work.map((item) => {
+    const node = el('button', {
+      class: 'list__item',
+      attrs: { type: 'button' },
+      children: [
+        el('div', {
+          class: 'list__main',
+          children: [
+            el('div', { class: 'list__text', text: item.text }),
+            el('div', {
+              class: 'list__meta',
+              children: item.counterparty
+                ? [who(item.counterparty, me), el('span', { class: 'list__when', text: item.settledAt ? formatDay(item.settledAt) : '' })]
+                : [el('span', { class: 'list__when', text: item.settledAt ? formatDay(item.settledAt) : '' })],
+            }),
+          ],
+        }),
+        el('div', {
+          class: 'list__side',
+          children: [
+            el('div', { class: 'list__amount', text: moneyLocal(item.amountMinor, item.currency) }),
+            el('span', { class: 'badge badge--good', text: t('Paid') }),
+          ],
+        }),
+        icon('chevron-right', 'list__chevron'),
+      ],
+    });
+    node.addEventListener('click', () => navigate(chitPath(item.chitId)));
+    return node;
+  });
+
+  mount(
+    screen({
+      header: topBar(navigate),
+      title: t('Record'),
+      body: [
+        el('div', { class: 'card', children: [party(address, t('Wallet'), { me, full: true, nameable: true })] }),
+        ...headline,
+        facts.length > 0 ? el('div', { class: 'card', children: facts }) : null,
+        view.reviews.length > 0
+          ? el('div', {
+              class: 'card card--pad stack stack--tight',
+              children: [el('h2', { text: t('What the other side said') }), ...view.reviews.map((r) => reviewRow(r, me, r.chitText))],
+            })
+          : null,
+        workList.length > 0
+          ? el('div', {
+              class: 'stack stack--tight',
+              children: [el('h2', { class: 'section', text: t('Settled work') }), el('div', { class: 'list', children: workList })],
+            })
+          : null,
+        details(
+          isMe ? t('Send this to a client') : t('Share this record'),
+          [
+            el('p', {
+              class: 'small secondary',
+              text: t('One link. It opens for anyone, with no account and no app, and every line on it can be checked against the chain.'),
+            }),
+            shareBlock(link),
+          ],
+          { cls: 'help', open: isMe },
+        ),
+        el('p', {
+          class: 'small secondary',
+          text: t('Every figure on this page is computed from payments on the Nimiq chain. Nobody can edit it — not the person it is about, and not chit.'),
+        }),
+      ],
+    }),
+  );
 }
 
 /* ------------------------------------------------------------------ about */

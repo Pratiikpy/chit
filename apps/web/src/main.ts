@@ -11,11 +11,17 @@
  */
 
 import './styles.css';
-import { aboutScreen, activityScreen, bountyBoardScreen, brokenScreen, chitScreen, composeScreen, notFoundScreen, verifyScreen } from './screens.ts';
+import { aboutScreen, activityScreen, bountyBoardScreen, brokenScreen, chitScreen, composeScreen, notFoundScreen, profileScreen, verifyScreen } from './screens.ts';
 import { initLanguage } from './i18n.ts';
 
-// The host's language, read once before the first screen is built.
-initLanguage(new URLSearchParams(window.location.search).get('lang') ?? undefined);
+/*
+ * The host's language, loaded before the first screen is built.
+ *
+ * Awaited on purpose: each dictionary is its own chunk, so five languages are not shipped to
+ * every user, and the cost of that is one round trip before the first paint. Rendering first
+ * and translating after would flash English at exactly the people who need it least.
+ */
+const languageReady = initLanguage(new URLSearchParams(window.location.search).get('lang') ?? undefined);
 
 // Stamp the host before anything renders, so safe-area rules apply to the first paint.
 if (typeof window !== 'undefined' && (window as { nimiqPay?: unknown }).nimiqPay !== undefined) {
@@ -26,7 +32,7 @@ function navigate(path: string): void {
   if (path !== window.location.pathname + window.location.search + window.location.hash) {
     window.history.pushState({}, '', path);
   }
-  void route();
+  void languageReady.then(route);
 }
 
 function fatal(error: unknown): void {
@@ -49,6 +55,12 @@ async function route(): Promise<void> {
     const verifyMatch = /^\/v\/(.+)$/.exec(path);
     if (verifyMatch?.[1]) return await verifyScreen(decodeURIComponent(verifyMatch[1]), navigate);
 
+    // The public record for one wallet. Its own path, not a tab inside Activity: this is the
+    // link a freelancer sends to a stranger, and a link that lands on somebody's private
+    // list of drafts and unpaid work would be the wrong page for that stranger to open.
+    const profileMatch = /^\/p\/(.+)$/.exec(path);
+    if (profileMatch?.[1]) return await profileScreen(decodeURIComponent(profileMatch[1]), navigate);
+
     if (path === '/bounty') return await bountyBoardScreen(navigate);
     if (path === '/about') return aboutScreen(navigate);
 
@@ -69,4 +81,5 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 window.addEventListener('error', (event) => fatal(event.error ?? event.message));
 
-void route();
+// The first screen waits for the dictionary; every later navigation is already loaded.
+void languageReady.then(route);

@@ -57,6 +57,16 @@ export interface StoredChit {
    */
   delivery?: { link: string; note: string; at: number; signature: { publicKeyHex: string; signatureHex: string } };
   /**
+   * What each side said about the other, signed, once the payment existed.
+   *
+   * At most two: one from the payer, one from the party paid. Each is signed over a canonical
+   * form that names the settling transaction (`@chit/core` `canonicaliseReview`), so a review
+   * cannot exist before money moved and cannot be written by anybody but those two wallets.
+   * Kept out of the chit for the same reason a delivery is: the agreement's digest is the
+   * product, and nothing said afterwards may change it.
+   */
+  reviews?: StoredReview[];
+  /**
    * The chit this one answers: a counter-offer, a revision, a milestone, a mutual cancel.
    *
    * Deliberately **not** part of the signed payload. Adding a field to the canonical text
@@ -66,6 +76,27 @@ export interface StoredChit {
    */
   parent?: string;
   createdAt: number;
+}
+
+/**
+ * One signed review, and everything needed to re-check it without this service.
+ *
+ * `by` and `about` are derived from the signature's public key at the moment it was accepted,
+ * never taken from the request: a reviewer says what they think, not who they are.
+ */
+export interface StoredReview {
+  /** Which side of the deal wrote it. There may be one of each, and never two of one. */
+  from: 'payer' | 'payee';
+  /** The wallet that signed. Derived from the public key, not supplied. */
+  by: string;
+  /** The wallet it is about — the other party. */
+  about: string;
+  rating: number;
+  text: string;
+  /** The settling transaction. What makes this a review of a payment rather than of a stranger. */
+  txHash: string;
+  at: number;
+  signature: { publicKeyHex: string; signatureHex: string };
 }
 
 /** Every state a chit passes through. Append-only, so the history is never rewritten. */
@@ -80,6 +111,8 @@ export type ChitEvent =
   | 'answered'
   /** The party who will be paid signed "here it is". */
   | 'delivered'
+  /** One side signed a review of the other, over the settling transaction. */
+  | 'reviewed'
   | 'bounty-posted'
   | 'bounty-claimed'
   | 'bounty-paid'
@@ -178,6 +211,7 @@ interface ChitRow {
   parent: string | null;
   settled_luna: string | null;
   delivery: string | null;
+  reviews: string | null;
   created_at: number;
 }
 
@@ -216,6 +250,7 @@ function rowToStored(row: ChitRow): StoredChit {
     ...(row.parent !== null && row.parent !== undefined ? { parent: row.parent } : {}),
     ...(row.settled_luna !== null && row.settled_luna !== undefined ? { settledLuna: BigInt(row.settled_luna) } : {}),
     ...(row.delivery ? { delivery: JSON.parse(row.delivery) as NonNullable<StoredChit['delivery']> } : {}),
+    ...(row.reviews ? { reviews: JSON.parse(row.reviews) as StoredReview[] } : {}),
     createdAt: row.created_at,
   };
 }
@@ -232,7 +267,7 @@ export class ChitStore {
     // Column added after the first deployments. The check makes the ALTER idempotent.
     const cols = (this.#db.prepare('PRAGMA table_info(chits)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('settled_from')) this.#db.exec('ALTER TABLE chits ADD COLUMN settled_from TEXT');
-    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent', 'settled_luna', 'delivery']) {
+    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent', 'settled_luna', 'delivery', 'reviews']) {
       if (!cols.includes(col)) this.#db.exec(`ALTER TABLE chits ADD COLUMN ${col} TEXT`);
     }
     if (!cols.includes('declined_at')) this.#db.exec('ALTER TABLE chits ADD COLUMN declined_at INTEGER');
@@ -386,10 +421,37 @@ export class ChitStore {
     return true;
   }
 
+  /**
+   * Append one review, refusing a second from the same side.
+   *
+   * The write is a compare-and-swap on the column: the previous serialised value is the
+   * guard, so two taps — or two devices — cannot both append and lose one of the writes.
+   * Returns false when the row moved underneath, and the caller re-reads rather than
+   * retrying blindly, because the reason may be that the other side just wrote theirs.
+   */
+  addReview(id: string, review: StoredReview): boolean {
+    const row = this.#db.prepare('SELECT reviews FROM chits WHERE id = ?').get(id) as { reviews: string | null } | undefined;
+    if (!row) return false;
+    const existing = row.reviews ? (JSON.parse(row.reviews) as StoredReview[]) : [];
+    if (existing.some((r) => r.from === review.from)) return false;
+    const next = JSON.stringify([...existing, review]);
+    const result = row.reviews === null
+      ? this.#db.prepare('UPDATE chits SET reviews = ? WHERE id = ? AND reviews IS NULL').run(next, id)
+      : this.#db.prepare('UPDATE chits SET reviews = ? WHERE id = ? AND reviews = ?').run(next, id, row.reviews);
+    if (result.changes === 0) return false;
+    this.#recordEvent(id, 'reviewed', `${review.from} ${review.rating}/5`, review.at);
+    return true;
+  }
+
   /** Every chit that is countersigned but not yet settled — what the watcher looks for. */
   awaitingSettlement(): StoredChit[] {
+    // `luna != '0'` excludes the chits that carry no payment — an amended scope, a mutual
+    // cancel. They are complete when both have signed, and there is nothing on chain to
+    // wait for. Including them would also make the matcher dangerous: a payment of anything
+    // at all clears a floor of zero, so a zero-Luna chit would settle on any transaction
+    // that happened to carry its digest.
     const rows = this.#db
-      .prepare('SELECT * FROM chits WHERE settled_tx IS NULL ORDER BY created_at DESC LIMIT 500')
+      .prepare("SELECT * FROM chits WHERE settled_tx IS NULL AND luna != '0' ORDER BY created_at DESC LIMIT 500")
       .all() as ChitRow[];
     return rows.map(rowToStored);
   }

@@ -31,6 +31,13 @@ export interface ChainTransaction {
 export interface ChainClient {
   getBlockNumber(): Promise<number>;
   getTransactionsByAddress(address: string, max?: number): Promise<ChainTransaction[]>;
+  /**
+   * Optional because settlement never needs it: a chit is paid or it is not, and the
+   * payer's balance has no bearing on that. It exists for the one thing a balance is
+   * honestly good for — telling somebody they are short *before* the wallet sheet opens
+   * and fails on them. A client that cannot read it degrades to saying nothing.
+   */
+  getAccountByAddress?(address: string): Promise<{ balance: bigint }>;
 }
 
 /** The RPC returned something we cannot use. Always carries the method that failed. */

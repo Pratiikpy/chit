@@ -83,6 +83,13 @@
   --chit-warn: #8a5a00;
   --chit-warn-soft: color-mix(in oklab, #8a5a00 11%, var(--chit-surface));
   --chit-bad: #c33a24;
+  /*
+   * A rating star. Dark enough to clear 3:1 against every surface it sits on — WCAG 1.4.11
+   * treats a star as a graphical object carrying information — while still reading as gold
+   * rather than brown. It is never the only signal: an earned star is filled and an unearned
+   * one is an outline, and the number is in the label beside it.
+   */
+  --chit-star: #a97b16;
   --chit-bad-soft: color-mix(in oklab, #c33a24 9%, var(--chit-surface));
 
   --chit-sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -158,6 +165,7 @@ html.in-nimiq-pay {
     --chit-warn: #e0a955;
     --chit-warn-soft: color-mix(in oklab, #e0a955 14%, var(--chit-surface));
     --chit-bad: #ff7a63;
+    --chit-star: #e0b258;
     --chit-bad-soft: color-mix(in oklab, #ff7a63 12%, var(--chit-surface));
     --shadow-raised: none;
   }
@@ -627,6 +635,51 @@ a.btn { text-decoration: none; }
 .icon--sm { width: 16px; height: 16px; }
 .icon--lg { width: 24px; height: 24px; }
 
+/* ---------- rating ---------- */
+
+/*
+ * A rating is drawn, never coloured-only: an earned star is filled and an unearned one is an
+ * outline, so the count survives a greyscale print and a screen reader gets the number in
+ * words from the label beside it. Gold is a decoration on top of a shape that already reads.
+ */
+.stars { display: inline-flex; gap: 2px; align-items: center; line-height: 1; }
+.stars .icon { stroke-width: 1.5; color: var(--chit-faint); }
+.stars .star--on { fill: var(--chit-star); color: var(--chit-star); }
+
+/*
+ * The five controls that set a rating.
+ *
+ * They are one control, not five chips, so nothing boxes them: the difference between chosen
+ * and not is the star being filled, which is the same difference a reader already understands
+ * from every rating they have ever seen. Each still occupies a 44px target, invisibly.
+ */
+.rate { display: flex; gap: 2px; margin-left: -10px; }
+.rate__star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-control);
+  background: none;
+  color: var(--chit-faint);
+  cursor: pointer;
+}
+.rate__star .icon { width: 26px; height: 26px; stroke-width: 1.5; }
+.rate__star[aria-checked='true'] { color: var(--chit-star); }
+.rate__star[aria-checked='true'] .icon { fill: currentColor; }
+.rate__star:active { background: var(--chit-subtle); }
+.rate__star:focus-visible { outline: 2px solid var(--chit-accent); outline-offset: -2px; }
+
+/* One review as it is read: stars, who, when, then the words. */
+.review { display: grid; gap: 6px; padding: 12px 0; border-top: 1px solid var(--chit-line); }
+.review:first-of-type { border-top: 0; }
+.review__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.review__text { margin: 0; color: var(--chit-ink); overflow-wrap: anywhere; }
+.review__for { margin: 0; font-size: 13px; color: var(--chit-muted); overflow-wrap: anywhere; }
+
 /* ---------- status ---------- */
 
 /*
@@ -879,6 +932,25 @@ a.btn { text-decoration: none; }
 .strip--warn { color: var(--chit-warn); background: var(--chit-warn-soft); }
 .strip--warn > .icon { color: var(--chit-warn); }
 
+/*
+ * The same strip, but it opens the wallet's public record. A chevron, not a link colour: the
+ * strip is still a statement, and the affordance is that there is more behind it.
+ */
+.strip--link {
+  width: 100%;
+  align-items: center;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+.strip--link > span { flex: 1 1 auto; }
+.strip__chevron { color: var(--chit-faint); }
+.strip--link:active { background: var(--chit-line); }
+.strip--link:focus-visible { outline: 2px solid var(--chit-accent); outline-offset: 2px; }
+
 /* ---------- pills and lists ---------- */
 
 .pill {
@@ -924,7 +996,24 @@ a.btn { text-decoration: none; }
 .list__main { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
 .list__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .list__text--wrap { white-space: normal; overflow: visible; font-weight: 400; }
-.list__meta { color: var(--chit-muted); font-size: 0.8125rem; }
+/*
+ * The meta line holds a wallet and a date, and at 390px they do not both fit whole. The
+ * wallet truncates and the date never does: a half-shown date is unreadable, a half-shown
+ * address is still recognisably an address, and the row underneath opens the full record.
+ */
+.list__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--chit-muted);
+  font-size: 0.8125rem;
+}
+.list__meta .who { min-width: 0; overflow: hidden; }
+.list__meta .who__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list__when { flex: 0 0 auto; white-space: nowrap; }
+.list__when::before { content: '·'; margin-right: 6px; color: var(--chit-faint); }
+.list__meta > .list__when:first-child::before { content: none; margin-right: 0; }
 .list__side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
 .list__amount { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .list__chevron { color: var(--chit-faint); }
@@ -1150,6 +1239,7 @@ h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacin
     --chit-warn: #000000;
     --chit-warn-soft: #ffffff;
     --chit-bad: #000000;
+    --chit-star: #000000;
     --chit-bad-soft: #ffffff;
     --shadow-raised: none;
   }

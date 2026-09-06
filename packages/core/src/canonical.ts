@@ -145,6 +145,26 @@ function assertUintBig(name: string, value: bigint): void {
  * every line is a complete field. Field order is fixed and must never change within a
  * version.
  */
+/**
+ * An agreement with no payment: an amended scope, or a cancellation both sides signed.
+ *
+ * Two things a freelancer needs and a payment rail does not naturally give them. The scope
+ * changed halfway and there is no record of the new deal, so the argument later is about
+ * whose memory is right; or the job is off and the chit sits open forever, which is worse
+ * than a "no" because nobody can tell it apart from a client who has not got round to it.
+ *
+ * Both are the same object as any other chit — same canonical form, same two signatures,
+ * same digest — with the amount set to nothing. Recognising one is therefore a question
+ * about the value, never a new field: adding a field would change every digest ever
+ * computed, and the digest is the product.
+ *
+ * A chit with no money in it settles when the second signature arrives, and never by
+ * payment. Nothing is due, so nothing can be late and nothing can be owed.
+ */
+export function isRecordOnly(chit: Pick<Chit, 'amountMinor' | 'luna'>): boolean {
+  return chit.amountMinor === 0n && chit.luna === 0n;
+}
+
 export function canonicalise(chit: Chit): string {
   if (chit.chain !== 'main' && chit.chain !== 'test') {
     throw new ChitCanonicalError(`chain must be "main" or "test", got ${JSON.stringify(chit.chain)}`);

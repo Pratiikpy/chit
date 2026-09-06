@@ -27,7 +27,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { KeyPair } from '@nimiq/core';
-import { nimiqSignedMessageDigest } from '@chit/verify';
+import { nimiqSignedMessageDigest, verifySignedText } from '@chit/verify';
 import { startFakeRpc } from './fake-nimiq-rpc.mjs';
 
 const BOUNTY_KEY = KeyPair.generate();
@@ -192,9 +192,23 @@ try {
     const address = await installWallet(context, keyPair, { onPay });
     const page = await context.newPage();
     page.on('console', (m) => {
+      if (m.type() !== 'error') return;
       // A deliberate 4xx from our own API (a refused answer, a missing chit) is the
-      // browser reporting a fetch status, not a page error. Anything else counts.
-      if (m.type() === 'error' && !/status of 4\d\d/.test(m.text())) consoleErrors.push(`[${name}] ${m.text()}`);
+      // browser reporting a fetch status, not a page error.
+      if (/status of 4\d\d/.test(m.text())) return;
+      /*
+       * "Failed to load resource" carries no URL in its text — the URL is in the message's
+       * location. A font CDN dropping a connection is the internet, not the product, and the
+       * font is loaded with `display=swap` behind a full fallback stack precisely so that it
+       * is survivable. Classified here the same way the request itself is, so one external
+       * blip cannot fail a run that is otherwise green.
+       */
+      const source = `${m.text()} ${m.location()?.url ?? ''}`;
+      if (/fonts\.(googleapis|gstatic)\.com/.test(source)) {
+        thirdPartyFailures.push(`[${name}] console: ${m.text()}`);
+        return;
+      }
+      consoleErrors.push(`[${name}] ${m.text()}`);
     });
     page.on('pageerror', (e) => consoleErrors.push(`[${name}] pageerror: ${e.message}`));
     page.on('requestfailed', (r) => {
@@ -766,7 +780,7 @@ try {
 
   await hWorker.page.locator('summary', { hasText: 'Say it is delivered' }).click();
   await hWorker.page.locator('input[type=url]').fill('https://drive.example/teaser.mp4');
-  await hWorker.page.locator('input[type=text]').first().fill('45 seconds, colour graded');
+  await hWorker.page.locator('input[placeholder*="One line about it"]').fill('45 seconds, colour graded');
   await hWorker.page.locator('button', { hasText: 'Mark it delivered' }).click();
   await hWorker.page.waitForSelector('text=You marked it delivered', { timeout: 20_000 });
   await shot(hWorker.page, '35-delivered-worker');
@@ -860,6 +874,22 @@ try {
   await shot(dPayer.page, '30-german');
   check('the first screen is in German when the host says so', /Deal einfügen\. Beleg bekommen\./.test(await dPayer.page.locator('body').innerText()));
 
+  /*
+   * The other three the platform ships. Each dictionary is its own chunk, loaded before the
+   * first paint, so the thing that can break is not a missing sentence — the tests catch
+   * those — but the chunk never arriving and the screen rendering English anyway.
+   */
+  for (const [code, phrase] of [['es', /Pega el trato/], ['fr', /Colle l’accord/], ['pt', /Cole o combinado/]]) {
+    await dPayer.page.goto(`${WEB}/?lang=${code}`, { waitUntil: 'networkidle' });
+    await dPayer.page.waitForSelector('h1', { timeout: 15_000 });
+    const body = await dPayer.page.locator('body').innerText();
+    check(`the whole first screen is in ${code}`, phrase.test(body) && !/Paste the deal/.test(body), body.slice(0, 60));
+    check(`and the page declares its language as ${code}`, (await dPayer.page.getAttribute('html', 'lang')) === code);
+  }
+  await dPayer.page.goto(`${WEB}/?lang=es`, { waitUntil: 'networkidle' });
+  await dPayer.page.waitForSelector('h1', { timeout: 15_000 });
+  await shot(dPayer.page, '47-spanish');
+
   // The About screen: what chit is and is not, reachable from the home screen and every receipt.
   await dPayer.page.goto(`${WEB}/about`, { waitUntil: 'networkidle' });
   await dPayer.page.waitForSelector('h1', { timeout: 15_000 });
@@ -875,6 +905,207 @@ try {
   const receiptView = await plainPage.locator('body').innerText();
   check('a receipt link carrying the words shows the browser-side check card', /your browser’s own check|checked in your browser/i.test(receiptView));
   check('and says which check came from where', /checked by chit’s server/.test(receiptView));
+
+  /* -------------------------------------------------- the review, and the record it feeds */
+  console.log('\n8j. Both sides review the deal, and the record is a page a stranger can open');
+
+  // The chit from section 3 is paid, so a review is now possible — and only now.
+  await payer.page.goto(`${WEB}/c/${encodeURIComponent(chitId)}`, { waitUntil: 'networkidle' });
+  await payer.page.waitForSelector('.receipt', { timeout: 20_000 });
+  check('a paid chit invites the two of them to say how it went', /How did it go\?/.test(await payer.page.locator('body').innerText()));
+
+  // The rating is a control, not a text field: five buttons, each big enough to hit.
+  const starBox = await payer.page.locator('.rate__star').first().boundingBox();
+  check('each star is a real tap target', starBox.width >= 44 && starBox.height >= 44, `${Math.round(starBox.width)}×${Math.round(starBox.height)}`);
+  check('and nothing can be signed before a rating is chosen', await payer.page.locator('button', { hasText: 'Sign this review' }).isDisabled());
+
+  await payer.page.locator('.rate__star').nth(4).click();
+  await payer.page.locator('input.field[placeholder*="One line"]').fill('Delivered a day early and the files were right.');
+  await shot(payer.page, '39-review-form');
+  await payer.page.locator('button', { hasText: 'Sign this review' }).click();
+  await payer.page.waitForSelector('.review', { timeout: 20_000 });
+
+  const reviewed = await (await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}`)).json();
+  check('the review is stored with the signature that proves it', reviewed.reviews.length === 1 && /^[0-9a-f]{128}$/.test(reviewed.reviews[0].signature.signatureHex));
+  check('bound to the payment that actually happened', reviewed.reviews[0].txHash === reviewed.settledTx.toLowerCase());
+  check(
+    'and attributed to the payer, about the worker',
+    reviewed.reviews[0].from === 'payer' && reviewed.reviews[0].about.replace(/\s/g, '') === worker.address.replace(/\s/g, ''),
+  );
+
+  // The same signed bytes, re-checked here with no help from the server. This is the claim
+  // the whole feature rests on: a review that outlives chit.
+  check(
+    'anyone can re-verify it from the words alone, with no chit server',
+    verifySignedText({
+      text: `chit/1 review\n${chitId}\n${reviewed.settledTx.toLowerCase()}\n5\nDelivered a day early and the files were right.\n`,
+      publicKeyHex: reviewed.reviews[0].signature.publicKeyHex,
+      signatureHex: reviewed.reviews[0].signature.signatureHex,
+      expectedAddress: reviewed.reviews[0].by,
+    }).ok,
+  );
+
+  // A stranger cannot write one, whatever they are willing to pay for it.
+  const strangerKey = KeyPair.generate();
+  const strangerText = `chit/1 review\n${chitId}\n${reviewed.settledTx.toLowerCase()}\n5\nExcellent seller A+++\n`;
+  const strangerTry = await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}/review`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      signature: {
+        publicKeyHex: strangerKey.publicKey.toHex(),
+        signatureHex: strangerKey.sign(nimiqSignedMessageDigest(new TextEncoder().encode(strangerText))).toHex(),
+      },
+      rating: 5,
+      text: 'Excellent seller A+++',
+    }),
+  });
+  check('a stranger cannot review a deal they were not in', strangerTry.status === 403);
+
+  // The worker reviews the client back. Being rated is not one-directional here — the
+  // freelancer being ghosted by a client is the other half of every complaint in the corpus.
+  await worker.page.goto(`${WEB}/c/${encodeURIComponent(chitId)}`, { waitUntil: 'networkidle' });
+  await worker.page.waitForSelector('.rate__star', { timeout: 20_000 });
+  check('the worker sees the review and can rate the client back', (await worker.page.locator('.review').count()) === 1);
+  await worker.page.locator('.rate__star').nth(3).click();
+  await worker.page.locator('button', { hasText: 'Sign this review' }).click();
+  await worker.page.waitForFunction(() => document.querySelectorAll('.review').length === 2, { timeout: 20_000 });
+  const bothWays = await (await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}`)).json();
+  check(
+    'and the two reviews point in opposite directions',
+    bothWays.reviews.length === 2 && bothWays.reviews.map((r) => r.from).sort().join() === 'payee,payer',
+  );
+
+  /* the public record — reputation and distribution in one page */
+  await plainPage.goto(`${WEB}/p/${encodeURIComponent(worker.address.replace(/\s/g, ''))}`, { waitUntil: 'networkidle', timeout: 60_000 });
+  await plainPage.waitForSelector('h1', { timeout: 20_000 });
+  await plainPage.screenshot({ path: `${SHOTS}/40-public-record.png`, fullPage: true, animations: 'disabled' });
+  const record = await plainPage.locator('body').innerText();
+  check('a stranger with no wallet can open somebody’s record', /Paid to this wallet/.test(record));
+  check('it lists the work that was actually paid for', /Settled work/.test(record));
+  check('it shows the review, next to the job it was for', /Delivered a day early/.test(record) && /For:/.test(record));
+  check('and it says plainly that nobody can edit it', /Nobody can edit it/.test(record));
+
+  const recordApi = await (await fetch(`${API}/api/addresses/${encodeURIComponent(worker.address)}/profile`)).json();
+  check('the page and the record behind it agree', recordApi.work.length >= 1 && recordApi.averageRating === 5);
+  check('every line on it opens a real payment', recordApi.work.every((w) => /^[0-9a-f]{64}$/i.test(w.txHash) || w.txHash.length > 0));
+
+  // The record page is the whole distribution strategy, so its share link has to be there.
+  const recordShareLink = await plainPage.evaluate(() => document.querySelector('.copyable__text')?.textContent ?? '');
+  check('and it carries its own shareable link', recordShareLink.includes('/p/'), recordShareLink);
+
+  // A wallet with nothing on it gets a page that says so — not an error, and not a blank.
+  await plainPage.goto(`${WEB}/p/${encodeURIComponent(KeyPair.generate().toAddress().toUserFriendlyAddress().replace(/\s/g, ''))}`, {
+    waitUntil: 'networkidle',
+    timeout: 60_000,
+  });
+  await plainPage.waitForSelector('h1', { timeout: 20_000 });
+  const emptyRecord = await plainPage.locator('body').innerText();
+  check('a wallet with no history reads as new, never as bad', /No settled work on this wallet/.test(emptyRecord));
+  await plainPage.screenshot({ path: `${SHOTS}/41-record-empty.png`, fullPage: true, animations: 'disabled' });
+
+  /* -------------------------------------------------- the scope changed, and calling it off */
+  console.log('\n8l. The scope changes mid-job, and a dead chit gets closed properly');
+  const aPayerKey = KeyPair.generate();
+  const aWorkerKey = KeyPair.generate();
+  const aPayer = await makeUser('amend-payer', aPayerKey, 'light', async () => 'unused');
+  await aPayer.page.goto(WEB, { waitUntil: 'networkidle' });
+  await aPayer.page.locator('button', { hasText: 'paying' }).click();
+  await aPayer.page.locator('textarea').fill('$50 to design a logo by the 12th');
+  await aPayer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+  await aPayer.page.locator('button', { hasText: 'Sign it' }).click();
+  await aPayer.page.waitForSelector('text=Send this to them', { timeout: 20_000 });
+  const amendUrl = aPayer.page.url();
+  const amendParentId = decodeURIComponent(new URL(amendUrl).pathname.replace('/c/', ''));
+
+  const aWorker = await makeUser('amend-worker', aWorkerKey, 'light', async () => 'unused');
+  await aWorker.page.goto(amendUrl, { waitUntil: 'networkidle' });
+  await aWorker.page.waitForSelector('text=agree this with you', { timeout: 20_000 });
+  await aWorker.page.locator('button', { hasText: 'Sign it' }).click();
+  await aWorker.page.waitForSelector('text=They can pay now', { timeout: 20_000 });
+
+  // The worker asks for the scope change. Nothing here moves money and nothing rewrites the
+  // chit they both already signed.
+  check('a signed, unpaid chit offers a way to record a change', /Something changed\?/.test(await aWorker.page.locator('body').innerText()));
+  await aWorker.page.locator('summary', { hasText: 'Something changed?' }).click();
+  await aWorker.page.locator('input.field[placeholder*="extra round"]').fill('one extra round of edits, same price');
+  await shot(aWorker.page, '43-amend-panel');
+  await aWorker.page.locator('button', { hasText: 'Sign the change' }).click();
+  await aWorker.page.waitForSelector('text=Send this to them', { timeout: 20_000 });
+  const amendId = decodeURIComponent(new URL(aWorker.page.url()).pathname.replace('/c/', ''));
+
+  const amendApi = await (await fetch(`${API}/api/chits/${encodeURIComponent(amendId)}`)).json();
+  check('it is a chit of its own, with no money in it', amendApi.chit.amountMinor === '0' && amendApi.chit.luna === '0');
+  check('pointed at the chit it amends', amendApi.parent === amendParentId);
+  check('and carrying the words both will sign', /one extra round of edits/.test(amendApi.chit.text));
+  check('the screen never says anything about being paid', !/pay|paid/i.test(await aWorker.page.locator('h1').innerText()));
+
+  // The other side signs, and that is the whole of it — there is nothing to settle.
+  await aPayer.page.goto(`${WEB}/c/${encodeURIComponent(amendId)}`, { waitUntil: 'networkidle' });
+  await aPayer.page.waitForSelector('text=agree a change', { timeout: 20_000 });
+  await shot(aPayer.page, '44-amend-sign');
+  await aPayer.page.locator('button', { hasText: 'Sign it' }).click();
+  await aPayer.page.waitForSelector('text=on the record', { timeout: 20_000 });
+  await shot(aPayer.page, '45-amend-done');
+  const amendDone = await (await fetch(`${API}/api/chits/${encodeURIComponent(amendId)}`)).json();
+  check('two signatures finish it, with nothing left pending', amendDone.countersigned === true && amendDone.settled === false);
+
+  const untouched = await (await fetch(`${API}/api/chits/${encodeURIComponent(amendParentId)}`)).json();
+  check('and the chit it answers is exactly as it was signed', untouched.chit.amountMinor === '5000' && /design a logo/.test(untouched.chit.text));
+
+  // A payment carrying the amendment's digest must not be able to settle it: the settlement
+  // floor is 97% of the agreed Luna, and 97% of nothing is nothing.
+  await rpc.inject({ to: aWorker.address, from: aPayer.address, value: 1, data: amendId });
+  await wait(2000);
+  const stillUnpaid = await (await fetch(`${API}/api/chits/${encodeURIComponent(amendId)}`)).json();
+  check('and no payment can mark a payment-free chit paid', stillUnpaid.settled === false && stillUnpaid.settledTx === null);
+
+  // Calling it off: the other half of the same object.
+  await aPayer.page.goto(`${WEB}/c/${encodeURIComponent(amendParentId)}`, { waitUntil: 'networkidle' });
+  await aPayer.page.waitForSelector('summary', { timeout: 20_000 });
+  await aPayer.page.locator('summary', { hasText: 'Something changed?' }).click();
+  await aPayer.page.locator('button', { hasText: 'Call it off' }).click();
+  await aPayer.page.waitForSelector('text=Send this to them', { timeout: 20_000 });
+  const cancelId = decodeURIComponent(new URL(aPayer.page.url()).pathname.replace('/c/', ''));
+  const cancelApi = await (await fetch(`${API}/api/chits/${encodeURIComponent(cancelId)}`)).json();
+  check('calling it off carries the original line, so the record reads on its own', /Called off by agreement/.test(cancelApi.chit.text) && /design a logo/.test(cancelApi.chit.text));
+
+  await aWorker.page.goto(`${WEB}/c/${encodeURIComponent(cancelId)}`, { waitUntil: 'networkidle' });
+  await aWorker.page.waitForSelector('text=call it off', { timeout: 20_000 });
+  await aWorker.page.locator('button', { hasText: 'Sign it' }).click();
+  await aWorker.page.waitForSelector('text=Called off', { timeout: 20_000 });
+  await shot(aWorker.page, '46-called-off');
+  check('and both names end up on the closing', (await (await fetch(`${API}/api/chits/${encodeURIComponent(cancelId)}`)).json()).countersigned === true);
+
+  /* -------------------------------------------------- the deadline that passes */
+  console.log('\n8k. A deadline passes, and the record says so');
+  const expiringUser = await makeUser('expiring', KeyPair.generate(), 'light', async () => 'unused');
+  await expiringUser.page.goto(WEB, { waitUntil: 'networkidle' });
+  await expiringUser.page.locator('button', { hasText: 'paying' }).click();
+  await expiringUser.page.locator('textarea').fill('$15 to proofread two pages by Friday');
+  await expiringUser.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+  await expiringUser.page.locator('button', { hasText: 'Sign it' }).click();
+  await expiringUser.page.waitForSelector('text=Send this to them', { timeout: 20_000 });
+  const expiringId = decodeURIComponent(new URL(expiringUser.page.url()).pathname.replace('/c/', ''));
+
+  const beforeExpiry = await (await fetch(`${API}/api/chits/${encodeURIComponent(expiringId)}`)).json();
+  check('a live chit has no expiry on its record', !(beforeExpiry.events ?? []).some((e) => e.event === 'expired'));
+
+  // The chain moves past the deadline. Nothing else happens — no cron, no sweep. The expiry
+  // is written the moment somebody looks, which is the only moment it matters to anyone.
+  rpc.advance(beforeExpiry.chit.deadlineBlock - rpc.height + 10);
+  await wait(2000);
+  const afterExpiry = await (await fetch(`${API}/api/chits/${encodeURIComponent(expiringId)}`)).json();
+  check('once the deadline has passed, the record says so', (afterExpiry.events ?? []).some((e) => e.event === 'expired'));
+  const readAgain = await (await fetch(`${API}/api/chits/${encodeURIComponent(expiringId)}`)).json();
+  check('and says it once, however many times it is read', readAgain.events.filter((e) => e.event === 'expired').length === 1);
+  check('while the chit itself stays payable — late is late, not void', afterExpiry.declined === false && afterExpiry.settled === false);
+
+  // What a person sees, which is the part that has to be humane rather than merely correct.
+  await expiringUser.page.goto(`${WEB}/c/${encodeURIComponent(expiringId)}`, { waitUntil: 'networkidle' });
+  await expiringUser.page.waitForSelector('h1', { timeout: 20_000 });
+  await shot(expiringUser.page, '42-past-deadline');
+  check('and the screen says the deadline passed without blaming anyone', /passed|overdue|late/i.test(await expiringUser.page.locator('body').innerText()));
 
   /* -------------------------------------------------- 9. hygiene */
 

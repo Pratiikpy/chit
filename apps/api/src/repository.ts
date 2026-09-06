@@ -15,9 +15,9 @@
  */
 
 import type { Chit } from '@chit/core';
-import { ChitStore, type ChitEvent, type StoredChit } from './db.ts';
+import { ChitStore, type ChitEvent, type StoredChit, type StoredReview } from './db.ts';
 
-export type { ChitEvent, StoredChit };
+export type { ChitEvent, StoredChit, StoredReview };
 
 export interface Signature {
   publicKeyHex: string;
@@ -56,6 +56,8 @@ export interface ChitRepository {
   decline(id: string): Promise<boolean>;
   /** The party who will be paid signed "here it is". Set once. */
   markDelivered(id: string, delivery: NonNullable<StoredChit['delivery']>): Promise<boolean>;
+  /** Append one signed review. False when that side has already left one. */
+  addReview(id: string, review: StoredReview): Promise<boolean>;
   /** Bounty: record the answer and the claiming device. */
   setClaim(id: string, claim: { answer: string; deviceHash: string }): Promise<boolean>;
   /** Bounty: record the payout the pool broadcast. */
@@ -126,6 +128,10 @@ export class SqliteRepository implements ChitRepository {
 
   async markDelivered(id: string, delivery: NonNullable<StoredChit['delivery']>) {
     return this.store.markDelivered(id, delivery);
+  }
+
+  async addReview(id: string, review: StoredReview) {
+    return this.store.addReview(id, review);
   }
 
   async setClaim(id: string, claim: { answer: string; deviceHash: string }) {

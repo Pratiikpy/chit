@@ -77,6 +77,8 @@ const ICONS = {
   shield: 'M12 3.5l7.5 3v5.5c0 4.5-3.2 7.6-7.5 9-4.3-1.4-7.5-4.5-7.5-9V6.5l7.5-3zM9 12l2 2 4-4.5',
   x: 'M6 6l12 12M18 6L6 18',
   home: 'M4 11l8-7 8 7M6 10v10h12V10',
+  // Closed, so the same path reads as an empty star or a filled one depending on `fill`.
+  star: 'M12 3.8l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 10l5.9-.9L12 3.8z',
 } as const;
 
 export type IconName = keyof typeof ICONS;

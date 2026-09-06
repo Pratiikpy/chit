@@ -14,6 +14,7 @@
  */
 
 import { createServer } from 'node:http';
+import { randomBytes } from 'node:crypto';
 
 const key = (address) => String(address ?? '').replace(/\s/g, '').toUpperCase();
 
@@ -38,7 +39,10 @@ export function startFakeRpc({ port = 8649, startHeight = 4_100_000 } = {}) {
         const tx = JSON.parse(body || '{}');
         height += 1;
         const record = {
-          hash: tx.hash ?? `tx_${Math.random().toString(36).slice(2, 12)}`,
+          // 64 lowercase hex, the way a real Nimiq node reports a transaction hash. A
+          // shorter placeholder once made a review impossible to sign in the journey while
+          // production was fine, which is the fake lying about the thing it stands in for.
+          hash: tx.hash ?? randomBytes(32).toString('hex'),
           blockNumber: height,
           timestamp: Math.floor(Date.now() / 1000),
           from: tx.from ?? '',
@@ -69,7 +73,7 @@ export function startFakeRpc({ port = 8649, startHeight = 4_100_000 } = {}) {
         // hex the way a real node would report it: we cannot deserialise here, so the test
         // harness records the raw hex and the journey injects the matching transaction.
         const [hex] = params;
-        const hash = 'payout_' + Math.random().toString(36).slice(2, 12);
+        const hash = randomBytes(32).toString('hex');
         broadcasts.push({ hash, hex: String(hex) });
         return reply({ jsonrpc: '2.0', id, result: { data: hash } });
       }

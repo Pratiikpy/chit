@@ -42,8 +42,8 @@ const lightBlock = css.slice(css.indexOf(':root {'), css.indexOf('@media (prefer
 const darkBlock = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'), css.indexOf('* { box-sizing'));
 const L = tokens(lightBlock);
 const D = { ...L, ...tokens(darkBlock) };
-const light = { page: L.page, surface: L.surface, subtle: L.subtle, ink: L.ink, secondary: L.secondary, muted: L.muted, accent: L.accent, accentText: L['accent-text'], good: L.good, warn: L.warn, bad: L.bad, primaryInk: L['primary-ink'], primary: L.primary };
-const dark = { page: D.page, surface: D.surface, subtle: D.subtle, ink: D.ink, secondary: D.secondary, muted: D.muted, accent: D.accent, accentText: D['accent-text'], good: D.good, warn: D.warn, bad: D.bad, primaryInk: D['primary-ink'], primary: D.primary };
+const light = { page: L.page, surface: L.surface, subtle: L.subtle, ink: L.ink, secondary: L.secondary, muted: L.muted, accent: L.accent, accentText: L['accent-text'], good: L.good, warn: L.warn, bad: L.bad, star: L.star, primaryInk: L['primary-ink'], primary: L.primary };
+const dark = { page: D.page, surface: D.surface, subtle: D.subtle, ink: D.ink, secondary: D.secondary, muted: D.muted, accent: D.accent, accentText: D['accent-text'], good: D.good, warn: D.warn, bad: D.bad, star: D.star, primaryInk: D['primary-ink'], primary: D.primary };
 
 console.log('\n== CONTRAST (WCAG AA: 4.5 body, 3.0 large/UI) ==');
 for (const [name, p] of [['light', light], ['dark', dark]]) {
@@ -53,6 +53,9 @@ for (const [name, p] of [['light', light], ['dark', dark]]) {
     ['muted on page', p.muted, p.page], ['muted on surface', p.muted, p.surface], ['muted on subtle', p.muted, p.subtle],
     ['accent (UI) on page', p.accent, p.page], ['accent-text on page', p.accentText, p.page], ['accent-text on surface', p.accentText, p.surface],
     ['good on surface', p.good, p.surface], ['warn on surface', p.warn, p.surface], ['bad on surface', p.bad, p.surface],
+    // A rating star is a graphical object carrying information (WCAG 1.4.11), so it is held
+    // to 3:1 — not 4.5:1, which no gold clears while still reading as gold.
+    ['star on surface', p.star, p.surface], ['star on page', p.star, p.page],
     ['primary button text', p.primaryInk, p.primary],
   ];
   for (const [label, fg, bg] of pairs) {

@@ -105,6 +105,10 @@ can be recomputed by anyone from the transaction hashes.
 | **The other half** | A settled deposit offers its second half, and any settled chit offers the next step of the job. |
 | **Waiting to be paid** | Activity leads with who owes you and for how long, with one tap to chase them — there are no reminders on this platform, so the person owed is the only thing that can. |
 | **An invoice** | The receipt prints as one, with details typed once and kept on the device. |
+| **A signed review** | After a payment, either side can rate the other over the settling transaction. No payment, no review — so there is nothing to farm and nothing worth buying. |
+| **A change, or a cancel** | The scope moved, or the job is off. Both are a chit with no money in it, signed by both, pointing at the one they answer. Nothing about the original is altered. |
+| **A public record** | One link a freelancer sends instead of a marketplace profile. Nothing on it is writable by its subject. |
+| **A spreadsheet** | Every settled chit as CSV — date, line, role, amount, NIM received, counterparty, transaction. The one thing everybody wants from a platform once a year. |
 
 <p align="center">
   <img src="docs/screens/36-pay-after-delivery.png" alt="The payer sees the work was delivered before paying" width="30%">
@@ -128,6 +132,37 @@ and address, the date, the service and the total with a tax note. chit already h
 those four; the fourth is typed once into `localStorage` and **never sent to the server,
 never put in a chit, never shown to the other side.** The test suite asserts all three.
 
+### The record is a page, and the page is the growth loop
+
+A marketplace rating is a row in that marketplace's database. It is why leaving one costs a
+freelancer years of work, why a suspended account takes the reputation with it, and why
+five-star accounts are worth buying — the seller is selling somebody else's rows.
+
+`/p/<address>` is the same thing without the row. Total paid, from how many distinct
+clients, the settled work itself, and the reviews — each signed by one of the two parties
+over the hash of the transaction that paid for it. Three properties fall out of that
+binding, and none of them is a policy:
+
+1. **No payment, no review.** The hash has to be the one the chain recorded for that chit.
+2. **Only the two parties may write one**, because the signature must verify against the
+   payer's key or the worker's, and the server derives who those are rather than believing
+   the request.
+3. **It survives chit.** Signature, public key and canonical text are enough for anyone to
+   re-check it with an off-the-shelf Ed25519 library.
+
+There is no bio, no headline, no gig list and no badge. A page its owner can write on is a
+page a stranger has to discount, and the whole value here is that they do not have to. It
+is also the only link in the product somebody has a reason to send to a person who has
+never heard of chit — which matters more than usual, because there is no discovery inside
+Nimiq Pay at all.
+
+<p align="center">
+  <img src="docs/screens/40-public-record.png" alt="A wallet's public record: paid, clients, reviews, settled work" width="30%">
+  <img src="docs/screens/39-review-form.png" alt="Rating the other side, signed over the payment" width="30%">
+  <img src="docs/screens/43-amend-panel.png" alt="Recording a change to the scope without touching the signed chit" width="30%">
+</p>
+<p align="center"><em>The record you send instead of a profile · a review bound to a payment · the scope changed</em></p>
+
 ---
 
 ## Nimiq, load-bearing
@@ -142,7 +177,7 @@ Not a payment button bolted on. The chain is what makes the product possible.
 | `getBlockNumber()` | Deadlines are block heights, so they are checkable against the chain rather than against a server clock. Also the mainnet/testnet guard. |
 | `isConsensusEstablished()` | Bounded, and never blocking. |
 | `requestDeviceIdentifier()` | Keeps the bounty fair — one payout per device per day — without a login. |
-| `getHostLanguage()` | English and German at the host's own preference. |
+| `getHostLanguage()` | All five languages the platform ships — English, German, Spanish, French, Portuguese — at the host's own preference. Each dictionary is its own chunk, so nobody downloads four they cannot read. |
 | `@nimiq/identicons` | Every wallet wears the same face it wears everywhere else in Nimiq. |
 | `@nimiq/utils` historic rates | What the payment was worth when it landed. |
 | Public RPC, from the browser | The verify page reads the chain **directly**, so a receipt outlives chit. |
@@ -159,14 +194,14 @@ Nothing below is a claim about intent; each is a command.
 
 ```bash
 npm install
-npm test          # core 83 · verify 22 · api 64 (+1 needs a blob token) · web 35
+npm test          # core 94 · verify 22 · api 93 (+1 needs a blob token) · web 44
 npm run typecheck # four packages, strict, exactOptionalPropertyTypes
 npm run build
 ```
 
 ```bash
 # Two people, two browsers, two real Ed25519 keys, the whole product end to end.
-# 155 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
+# 201 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
 node --experimental-strip-types scripts/user-journey.mjs
 
 # The live deployment, in a real browser. 21 checks.
@@ -219,7 +254,7 @@ had actually countersigned.
 | `packages/core` | The frozen foundation. Canonical form, digest, delivery form, signature normaliser, terms parser, wallet tiers. No dependency on a browser, a server or a wallet. |
 | `packages/verify` | Real Ed25519 verification and address derivation. Separate because it pulls a WASM bundle that has no business on a phone. |
 | `apps/api` | Chit lifecycle, both storage back-ends, settlement, rate quotes, the bounty, abuse controls. |
-| `apps/web` | Nineteen screens, no framework. **131 kB of JavaScript, 47 kB gzipped**, and the 87 kB identicon library is a lazy chunk the composer never pays for. |
+| `apps/web` | Twenty-two screens, no framework. **115 kB of JavaScript, 40 kB gzipped**, with the identicon library and each of the four translations as lazy chunks nobody pays for unless they need them. |
 
 chit has **no CSS dependency**. It had one — `nimiq-css` — until that package was found to
 publish **no licence at all** (`npm view nimiq-css license` returns nothing; its repository
@@ -325,6 +360,7 @@ Honest limits. Everything here needs a physical device or funds.
   (`nimiq/trust-web3-provider`, branch `nimiq`) and the signer's vectors are pinned, but the
   app binary is closed and the sheet's own UI was not seen.
 - **The Android file picker and camera**, host-gated.
+- **The Spanish, French and Portuguese copy has not been read by a native speaker.** It is complete, tested for missing keys, stale keys, dropped placeholders and untranslated leftovers, and written rather than machine-generated — but that is not the same as reviewed.
 - **Arc mainnet.** Every reference found was testnet, which is why the word *escrow* appears
   nowhere in the product.
 

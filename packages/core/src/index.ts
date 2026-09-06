@@ -13,6 +13,7 @@ export {
   MAX_TEXT_BYTES,
   canonicalise,
   escapeField,
+  isRecordOnly,
   normaliseAddress,
   parseCanonical,
   unescapeField,
@@ -29,6 +30,16 @@ export {
   parseDelivery,
   type Delivery,
 } from './delivery.ts';
+
+export {
+  MAX_RATING,
+  MAX_REVIEW_BYTES,
+  MIN_RATING,
+  REVIEW_CANONICAL_VERSION,
+  canonicaliseReview,
+  parseReview,
+  type Review,
+} from './review.ts';
 
 export {
   CHIT_MEMO_PREFIX,

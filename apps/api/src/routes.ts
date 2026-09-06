@@ -13,7 +13,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { canonicalise, canonicaliseDelivery, chitHash, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
+import { canonicalise, canonicaliseDelivery, canonicaliseReview, chitHash, isRecordOnly, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
 import { addressFromPublicKey, verifyChit, verifySignedText } from '@chit/verify';
 import type { StoredChit } from './db.ts';
 import type { ChitRepository } from './repository.ts';
@@ -21,7 +21,8 @@ import type { SettlementWatcher } from './watcher.ts';
 import { RateUnavailableError, type RateService } from './rates.ts';
 import type { ChainClient } from './chain.ts';
 import { bodyLimit, rateLimit, securityHeaders } from './guard.ts';
-import { ledger, presentLedger } from './reputation.ts';
+import { ledger, presentLedger, presentProfile, profile } from './reputation.ts';
+import { toCsv } from './export.ts';
 import type { BountyService, DemoWorker } from './bounty.ts';
 
 export interface RouteOptions {
@@ -127,6 +128,23 @@ function present(
     parent: stored.parent ?? null,
     /** "Here it is", signed by the party who will be paid. Never part of the agreement. */
     delivery: stored.delivery ? { link: stored.delivery.link, note: stored.delivery.note, at: stored.delivery.at } : null,
+    /**
+     * What each side said afterwards, signed over the settling transaction.
+     *
+     * The signature and public key go out with it deliberately: a review whose proof stays
+     * on the server is a review this service could quietly change, which is the whole thing
+     * it exists not to be. Anyone can re-check these with an Ed25519 library and nothing else.
+     */
+    reviews: (stored.reviews ?? []).map((r) => ({
+      from: r.from,
+      by: r.by,
+      about: r.about,
+      rating: r.rating,
+      text: r.text,
+      txHash: r.txHash,
+      at: r.at,
+      signature: r.signature,
+    })),
     bounty: flags.bounty ? flags.bounty(stored) : false,
     demoWorker: demoSigned,
     createdAt: stored.createdAt,
@@ -218,6 +236,18 @@ export function createRoutes(options: RouteOptions) {
         },
         400,
       );
+    }
+
+    /*
+     * An amount of nothing means nothing is owed, and the two must agree.
+     *
+     * A chit claiming zero money but a non-zero Luna figure would be a chit whose two halves
+     * disagree about whether there is a payment — settlement would look for one, the screens
+     * would say there is none. There is no honest reading of it, so it is refused here rather
+     * than stored and interpreted differently by each side later.
+     */
+    if ((parsed.amountMinor === 0n) !== (parsed.luna === 0n)) {
+      return c.json({ code: 'bad-amount', error: 'A chit for nothing must be zero on both sides.' }, 400);
     }
 
     // Re-verify. The client's word is not evidence.
@@ -314,15 +344,59 @@ export function createRoutes(options: RouteOptions) {
     }
   });
 
+  /**
+   * What one address holds, in Luna.
+   *
+   * The one thing a balance is honestly useful for here is telling somebody they are short
+   * *before* the wallet sheet opens and fails on them — the Nimiq provider has no
+   * `getBalance`, so a Mini App cannot ask this itself. Public data either way: this is a
+   * public chain, and the address is one the caller already knows.
+   *
+   * Never an error page. An RPC that is briefly unreachable returns `known: false` and the
+   * client simply says nothing, which is the correct behaviour for a hint.
+   */
+  app.get('/api/balance/:address', async (c) => {
+    const address = decodeURIComponent(c.req.param('address')).trim();
+    if (!/^NQ[0-9A-Z ]{34,44}$/i.test(address)) {
+      return c.json({ code: 'bad-address', error: 'Not a Nimiq address.' }, 400);
+    }
+    const read = options.chainClient?.getAccountByAddress;
+    if (!read || !options.chainClient) return c.json({ known: false });
+    try {
+      const account = await read.call(options.chainClient, address.toUpperCase());
+      return c.json({ known: true, luna: account.balance.toString(10) });
+    } catch {
+      return c.json({ known: false });
+    }
+  });
+
   app.get('/api/chits/:id', async (c) => {
     let stored = await store.get(c.req.param('id'));
     if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
 
     // On a deployment without a watcher, this read *is* the settlement check: both parties
     // are watching this screen at exactly the moment the payment lands.
-    if (options.confirmSettlement && stored.payeeSignature && !stored.settledTx) {
+    if (options.confirmSettlement && stored.payeeSignature && !stored.settledTx && !isRecordOnly(stored.chit)) {
       if (await options.confirmSettlement(stored)) {
         stored = (await store.get(stored.id)) ?? stored;
+      }
+    }
+
+    const currentBlock = options.watcher?.stats.lastHeight || (await options.currentHeight?.().catch(() => 0)) || 0;
+
+    /*
+     * A deadline that passes with nothing paid is a fact about the chit, and until now it
+     * left no trace: the `expired` event existed in the type and had no writer anywhere.
+     * Recorded here, on the same on-read principle as settlement — the moment somebody
+     * looks is the moment it matters, and a chit nobody looks at needs no history.
+     *
+     * It changes nothing else. An expired chit can still be signed and still be paid; late
+     * is late, not void, and the receipt already says so with its own badge.
+     */
+    if (currentBlock > 0 && !stored.settledTx && !stored.declinedAt && !isRecordOnly(stored.chit) && stored.chit.deadlineBlock < currentBlock) {
+      const history = await store.events(stored.id);
+      if (!history.some((e) => e.event === 'expired')) {
+        await store.recordEvent(stored.id, 'expired', `block ${currentBlock}`);
       }
     }
 
@@ -331,7 +405,7 @@ export function createRoutes(options: RouteOptions) {
       // The last height the watcher saw, or — where there is no watcher — a freshly read
       // one. Lets the client turn a deadline block into "due in about two days"; a raw
       // block number tells a human nothing.
-      currentBlock: options.watcher?.stats.lastHeight || (await options.currentHeight?.().catch(() => 0)) || 0,
+      currentBlock,
       events: await store.events(stored.id),
     });
   });
@@ -580,6 +654,95 @@ export function createRoutes(options: RouteOptions) {
   });
 
   /**
+   * A review of a payment that provably happened.
+   *
+   * Bound to the settling transaction hash, and that binding is the whole design. It means a
+   * review cannot exist before money moved, so there is nothing to farm in bulk and nothing
+   * worth buying — the amount behind every review is public. It also means only two wallets
+   * on earth can write one here, because the signature has to verify against the payer's key
+   * or the worker's, and this endpoint derives who they are rather than believing the body.
+   *
+   * One per side, and the first one stands. There is no edit and no delete: a service that
+   * could remove a review would own the record again, which is the thing every complaint in
+   * the research corpus is about.
+   */
+  app.post('/api/chits/:id/review', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    if (!stored.settledTx) {
+      return c.json({ code: 'not-settled', error: 'A review follows a payment. This one has not been paid yet.' }, 409);
+    }
+    if (options.bounty?.isBounty(stored)) {
+      return c.json({ code: 'not-for-bounty', error: 'A bounty pays a stranger for a test. There is nobody to review.' }, 409);
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const record = body as Record<string, unknown>;
+    const signature = record['signature'];
+    const rating = Number(record['rating']);
+    const text = typeof record['text'] === 'string' ? record['text'] : '';
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'A review has to be signed.' }, 400);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseReview({ chitId: stored.id, txHash: stored.settledTx.toLowerCase(), rating, text });
+    } catch (error) {
+      return c.json({ code: 'bad-review', error: error instanceof Error ? error.message : 'Not a valid review.' }, 400);
+    }
+
+    /*
+     * Who the two parties are, resolved from the record rather than from the request.
+     *
+     * On a quote the payer field is empty by construction — the client is whoever sent the
+     * settling transaction and nothing else — so `settledFrom` is the only name for them.
+     */
+    const worker = stored.chit.payee || stored.countersigner || '';
+    const payer = stored.chit.kind === 'quote' ? (stored.settledFrom ?? '') : stored.chit.payer;
+    if (!worker || !payer) {
+      return c.json({ code: 'unknown-parties', error: 'This chit does not name both sides, so a review cannot be attributed.' }, 409);
+    }
+
+    // Try each side in turn. Whichever the signature verifies against is the author, and the
+    // other is the subject; a signature that matches neither is simply not from this deal.
+    const asPayer = verifySignedText({ text: canonical, publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex, expectedAddress: payer });
+    const asWorker = asPayer.ok
+      ? null
+      : verifySignedText({ text: canonical, publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex, expectedAddress: worker });
+    const from: 'payer' | 'payee' | null = asPayer.ok ? 'payer' : asWorker?.ok ? 'payee' : null;
+    if (!from) {
+      const failure = asPayer.failure ?? asWorker?.failure;
+      return c.json(
+        {
+          code: failure === 'bad-signature' ? 'bad-signature' : 'not-a-party',
+          error: 'Only the two wallets in this deal can review it, and that signature is from neither.',
+        },
+        403,
+      );
+    }
+
+    const review = {
+      from,
+      by: from === 'payer' ? payer : worker,
+      about: from === 'payer' ? worker : payer,
+      rating,
+      text,
+      txHash: stored.settledTx.toLowerCase(),
+      at: Date.now(),
+      signature,
+    };
+    const written = await store.addReview(stored.id, review);
+    const updated = await store.get(stored.id);
+    return c.json({ ...present(updated ?? stored, baseUrl, flags), ...(written ? {} : { alreadyReviewed: true }) }, 200);
+  });
+
+  /**
    * The demo worker countersigns a chit on request — labelled, so a single person (a judge)
    * can create a chit, have it countersigned, pay it, and hold a real receipt.
    */
@@ -604,6 +767,47 @@ export function createRoutes(options: RouteOptions) {
     const chits = await store.forAddress(address, 500);
     const height = options.watcher?.stats.lastHeight || (await options.currentHeight?.().catch(() => 0)) || 0;
     return c.json(presentLedger(ledger(address, chits, height)));
+  });
+
+  /**
+   * A year of settled work, as a file an accountant can open.
+   *
+   * A plain URL rather than something the page assembles, because a Mini App runs inside a
+   * WebView where a blob download is not reliably allowed to happen — and a download button
+   * that silently does nothing is worse than none. This one can be opened, shared, or handed
+   * to a spreadsheet directly.
+   *
+   * Public, like everything else here: it contains only settled payments, all of which are
+   * already on a public chain and already readable one receipt at a time.
+   */
+  app.get('/api/addresses/:address/export.csv', async (c) => {
+    const address = c.req.param('address');
+    const chits = await store.forAddress(address, 500);
+    const csv = toCsv(address, chits, baseUrl);
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        'content-type': 'text/csv; charset=utf-8',
+        // Named for the wallet, so two exports never overwrite each other in a downloads folder.
+        'content-disposition': `attachment; filename="chit-${address.replace(/\s/g, '').slice(0, 12)}.csv"`,
+        'cache-control': 'no-store',
+      },
+    });
+  });
+
+  /**
+   * The public record for one wallet — the page sent in place of a marketplace profile.
+   *
+   * Same inputs as the ledger, plus the signed reviews and the settled work behind the
+   * numbers, so a stranger reading it can open any line and check it against the chain.
+   * Public by construction: everything on it is already public, and none of it is writable
+   * by its subject.
+   */
+  app.get('/api/addresses/:address/profile', async (c) => {
+    const address = c.req.param('address');
+    const chits = await store.forAddress(address, 500);
+    const height = options.watcher?.stats.lastHeight || (await options.currentHeight?.().catch(() => 0)) || 0;
+    return c.json(presentProfile(profile(address, chits, height)));
   });
 
   return app;

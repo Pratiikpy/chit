@@ -85,6 +85,45 @@ export function buildDraft(input: DraftInput): Draft {
   return { chit, canonical: canonicalise(chit), id: chitHash(chit) };
 }
 
+/**
+ * A chit with no money in it: an amended scope, or a cancellation both sides signed.
+ *
+ * The same object as every other chit — same canonical form, same two signatures, same
+ * digest — with the amount set to nothing, so nothing new had to be invented and nothing
+ * about the format changed. It is complete when the second signature lands.
+ *
+ * `kind` is `handshake` because both parties are known by the time one of these is written:
+ * it always answers a chit that already has two signatures on it, so there is nobody to race.
+ */
+export function buildRecordChit(input: {
+  text: string;
+  signer: string;
+  other: string;
+  chain: 'main' | 'test';
+  currency: string;
+  currentBlock: number;
+}): Draft {
+  const chit: Chit = {
+    chain: input.chain,
+    kind: 'handshake',
+    nonce: newNonce(),
+    text: input.text,
+    amountMinor: 0n,
+    // The currency is carried even at zero so the record reads in the same money as the
+    // chit it answers, rather than switching to something the two never discussed.
+    currency: input.currency.toUpperCase(),
+    luna: 0n,
+    rateBlock: input.currentBlock,
+    // A week. Nothing is owed, so this is only the window in which the other side is
+    // expected to look at it — it can be signed afterwards like any other chit.
+    deadlineBlock: input.currentBlock + Math.round(7 * BLOCKS_PER_DAY),
+    payer: input.signer,
+    payee: input.other,
+    deliverables: 1,
+  };
+  return { chit, canonical: canonicalise(chit), id: chitHash(chit) };
+}
+
 /** What the compose screen holds while the user is correcting our reading of their line. */
 export interface DraftFields {
   text: string;
