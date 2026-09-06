@@ -29,6 +29,8 @@ export interface CreateChitInput {
   canonical: string;
   chit: Chit;
   payerSignature: Signature;
+  /** The chit this one answers. Metadata, never signed — see `StoredChit.parent`. */
+  parent?: string;
 }
 
 export interface EventRecord {

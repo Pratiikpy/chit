@@ -117,6 +117,8 @@ function present(
     answer: stored.answer ?? null,
     payoutTx: stored.payoutTx ?? null,
     declined: stored.declinedAt !== undefined,
+    /** The chit this one answers, if any. Metadata, not part of the signed text. */
+    parent: stored.parent ?? null,
     bounty: flags.bounty ? flags.bounty(stored) : false,
     demoWorker: demoSigned,
     createdAt: stored.createdAt,
@@ -226,8 +228,30 @@ export function createRoutes(options: RouteOptions) {
       );
     }
 
+    /*
+     * The chit this one answers — a counter-offer, a revision, a milestone, a mutual cancel.
+     * Checked to be a chit that exists, then stored as metadata. It is deliberately outside
+     * the signed text: adding a field to the canonical form would change every digest ever
+     * computed. So the link orders the record and lets a screen say "in reply to"; it claims
+     * nothing about what the two parties agreed.
+     */
+    const rawParent = record['parent'];
+    let parent: string | undefined;
+    if (typeof rawParent === 'string' && rawParent.length > 0) {
+      const found = await store.get(rawParent);
+      if (!found) return c.json({ code: 'no-parent', error: 'The chit this one answers does not exist.' }, 400);
+      parent = found.id;
+    }
+
     const id = chitHash(parsed);
-    const { created, chit } = await store.create({ id, canonical: canonicalise(parsed), chit: parsed, payerSignature });
+    const { created, chit } = await store.create({
+      id,
+      canonical: canonicalise(parsed),
+      chit: parsed,
+      payerSignature,
+      ...(parent ? { parent } : {}),
+    });
+    if (created && parent) await store.recordEvent(parent, 'answered', id);
     return c.json(present(chit, baseUrl, flags), created ? 201 : 200);
   });
 

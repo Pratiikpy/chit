@@ -39,6 +39,15 @@ export interface StoredChit {
   payoutTx?: string;
   /** The worker declined. Set once; nothing else changes after it. */
   declinedAt?: number;
+  /**
+   * The chit this one answers: a counter-offer, a revision, a milestone, a mutual cancel.
+   *
+   * Deliberately **not** part of the signed payload. Adding a field to the canonical text
+   * would change every digest ever computed, and the digest is the product. So the link is
+   * server-side metadata: it orders the record and lets a screen say "replaces …", and it
+   * claims nothing about what the two parties signed.
+   */
+  parent?: string;
   createdAt: number;
 }
 
@@ -50,6 +59,8 @@ export type ChitEvent =
   | 'expired'
   | 'declined'
   | 'settlement-mismatch'
+  /** Another chit was created in reply to this one: a counter-offer, revision, milestone or cancel. */
+  | 'answered'
   | 'bounty-posted'
   | 'bounty-claimed'
   | 'bounty-paid'
@@ -145,6 +156,7 @@ interface ChitRow {
   device_hash: string | null;
   payout_tx: string | null;
   declined_at: number | null;
+  parent: string | null;
   created_at: number;
 }
 
@@ -180,6 +192,7 @@ function rowToStored(row: ChitRow): StoredChit {
     ...(row.device_hash !== null ? { deviceHash: row.device_hash } : {}),
     ...(row.payout_tx !== null ? { payoutTx: row.payout_tx } : {}),
     ...(row.declined_at !== null ? { declinedAt: row.declined_at } : {}),
+    ...(row.parent !== null && row.parent !== undefined ? { parent: row.parent } : {}),
     createdAt: row.created_at,
   };
 }
@@ -196,7 +209,7 @@ export class ChitStore {
     // Column added after the first deployments. The check makes the ALTER idempotent.
     const cols = (this.#db.prepare('PRAGMA table_info(chits)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('settled_from')) this.#db.exec('ALTER TABLE chits ADD COLUMN settled_from TEXT');
-    for (const col of ['answer', 'device_hash', 'payout_tx']) {
+    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent']) {
       if (!cols.includes(col)) this.#db.exec(`ALTER TABLE chits ADD COLUMN ${col} TEXT`);
     }
     if (!cols.includes('declined_at')) this.#db.exec('ALTER TABLE chits ADD COLUMN declined_at INTEGER');
@@ -218,6 +231,7 @@ export class ChitStore {
     canonical: string;
     chit: Chit;
     payerSignature: { publicKeyHex: string; signatureHex: string };
+    parent?: string;
   }): { created: boolean; chit: StoredChit } {
     const existing = this.get(input.id);
     if (existing) return { created: false, chit: existing };
@@ -229,11 +243,11 @@ export class ChitStore {
           `INSERT INTO chits (
             id, canonical, chain, kind, text, amount_minor, currency, luna,
             rate_block, deadline_block, payer, payee, deliverables, nonce,
-            payer_public_key, payer_signature, created_at
+            payer_public_key, payer_signature, parent, created_at
           ) VALUES (
             @id, @canonical, @chain, @kind, @text, @amount_minor, @currency, @luna,
             @rate_block, @deadline_block, @payer, @payee, @deliverables, @nonce,
-            @payer_public_key, @payer_signature, @created_at
+            @payer_public_key, @payer_signature, @parent, @created_at
           )`,
         )
         .run({
@@ -253,6 +267,7 @@ export class ChitStore {
           nonce: input.chit.nonce,
           payer_public_key: input.payerSignature.publicKeyHex,
           payer_signature: input.payerSignature.signatureHex,
+          parent: input.parent ?? null,
           created_at: now,
         });
 

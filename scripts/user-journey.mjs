@@ -179,6 +179,8 @@ try {
   const browser = await chromium.launch();
   const consoleErrors = [];
   const failedRequests = [];
+  /** Requests to somebody else's servers that failed. Reported, never fatal. */
+  const thirdPartyFailures = [];
 
   /** Build a browser context for one person. */
   const makeUser = async (name, keyPair, scheme, onPay) => {
@@ -195,7 +197,13 @@ try {
       if (m.type() === 'error' && !/status of 4\d\d/.test(m.text())) consoleErrors.push(`[${name}] ${m.text()}`);
     });
     page.on('pageerror', (e) => consoleErrors.push(`[${name}] pageerror: ${e.message}`));
-    page.on('requestfailed', (r) => failedRequests.push(`[${name}] ${r.url()}`));
+    page.on('requestfailed', (r) => {
+      // A third-party CDN going away mid-run is the internet, not the product. The font is
+      // loaded with `display=swap` behind a fallback stack precisely so a failure is
+      // survivable, so it is recorded separately and does not fail the run.
+      const list = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(r.url()) ? failedRequests : thirdPartyFailures;
+      list.push(`[${name}] ${r.url()}`);
+    });
     return { context, page, address, name };
   };
 
@@ -648,6 +656,58 @@ try {
   await shot(dPayer.page, '29-declined-payer');
   check('the payer is told they declined and offered a new one', /Send a new one/.test(await dPayer.page.locator('body').innerText()));
 
+  /* -------------------------------------------------- counter-offer, and half up front */
+  console.log('\n8g. A worker asks for a change instead of signing; and a deposit is half of the job');
+  const cPayerKey = KeyPair.generate();
+  const cWorkerKey = KeyPair.generate();
+  const cPayer = await makeUser('counter-payer', cPayerKey, 'light', async () => 'unused');
+  await cPayer.page.goto(WEB, { waitUntil: 'networkidle' });
+  await cPayer.page.locator('button', { hasText: 'paying' }).click();
+  await cPayer.page.locator('textarea').fill('$30 to caption this podcast episode by Thursday');
+  await cPayer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+  await cPayer.page.locator('button', { hasText: 'Sign it' }).click();
+  await cPayer.page.waitForSelector('text=Send this to them', { timeout: 20_000 });
+  const counterUrl = cPayer.page.url();
+  const parentId = decodeURIComponent(new URL(counterUrl).pathname.replace('/c/', ''));
+
+  const cWorker = await makeUser('counter-worker', cWorkerKey, 'light', async () => 'unused');
+  await cWorker.page.goto(counterUrl, { waitUntil: 'networkidle' });
+  await cWorker.page.waitForSelector('text=agree this with you', { timeout: 20_000 });
+  check('a worker can answer with something other than yes or nothing', /Ask for a change/.test(await cWorker.page.locator('body').innerText()));
+  await cWorker.page.locator('button', { hasText: 'Ask for a change' }).click();
+  await cWorker.page.waitForSelector('text=In reply to', { timeout: 20_000 });
+  await shot(cWorker.page, '33-counter-offer');
+  const counterBody = await cWorker.page.locator('body').innerText();
+  check('the composer says what it is answering, and carries the words', /caption this podcast episode/.test(counterBody));
+  check('and it opens in the direction that lets the worker set the number', await cWorker.page.locator('.seg__item[aria-pressed="true"]').innerText().then((v) => /getting paid/.test(v)));
+
+  // The worker raises the price and signs. The client accepts it by paying, so nobody signs twice.
+  await cWorker.page.locator('.card:not(.card--accent) button', { hasText: '30.00' }).first().click();
+  await cWorker.page.locator('input.field').fill('45');
+  await cWorker.page.locator('button', { hasText: 'Set it' }).click();
+  await cWorker.page.waitForFunction(() => document.body.innerText.includes('45.00'), { timeout: 15_000 });
+  await cWorker.page.locator('button', { hasText: 'Sign it' }).click();
+  await cWorker.page.waitForSelector('text=Your quote', { timeout: 20_000 });
+  const counterId = decodeURIComponent(new URL(cWorker.page.url()).pathname.replace('/c/', ''));
+  const counterApi = await (await fetch(`${API}/api/chits/${encodeURIComponent(counterId)}`)).json();
+  check('the counter-offer is a chit of its own, pointed at the one it answers', counterApi.parent === parentId);
+  check('at the new number, signed by the worker', counterApi.chit.amountMinor === '4500' && counterApi.chit.kind === 'quote');
+  const parentEvents = await (await fetch(`${API}/api/chits/${encodeURIComponent(parentId)}`)).json();
+  check('and the original records that it was answered', (parentEvents.events ?? []).some((e) => e.event === 'answered'));
+  check('while the original chit itself is untouched', parentEvents.chit.amountMinor === '3000' && parentEvents.declined === false);
+
+  // Half up front — the community's default deal, as one optional chip.
+  await cPayer.page.goto(WEB, { waitUntil: 'networkidle' });
+  await cPayer.page.locator('button', { hasText: 'paying' }).click();
+  await cPayer.page.locator('textarea').fill('$80 to build a one-page site by the 20th');
+  await cPayer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+  await cPayer.page.locator('button', { hasText: 'half up front' }).click();
+  await cPayer.page.waitForFunction(() => document.body.innerText.includes('40.00'), { timeout: 15_000 });
+  await shot(cPayer.page, '34-half-up-front');
+  const depositBody = await cPayer.page.locator('body').innerText();
+  check('half up front halves the amount', /40\.00/.test(depositBody));
+  check('and says so in the words both sides sign', /Half up front/.test(await cPayer.page.locator('textarea').inputValue()));
+
   /* -------------------------------------------------- German + the self-checking receipt */
   console.log('\n8f. German, and a receipt link that carries the signed words');
   await dPayer.page.goto(`${WEB}/?lang=de`, { waitUntil: 'networkidle' });
@@ -675,8 +735,11 @@ try {
 
   console.log('\n9. Hygiene');
 
-  check('no console errors anywhere in the journey', consoleErrors.length === 0, consoleErrors.join(' | '));
-  check('no failed requests', failedRequests.length === 0, failedRequests.join(' | '));
+  // A console error caused by a third-party resource failing is the same external event.
+  const ownErrors = consoleErrors.filter((e) => !/fonts\.(googleapis|gstatic)\.com/.test(e));
+  check('no console errors anywhere in the journey', ownErrors.length === 0, ownErrors.join(' | '));
+  check('nothing chit serves failed to load', failedRequests.length === 0, failedRequests.join(' | '));
+  if (thirdPartyFailures.length > 0) console.log(`  note  ${thirdPartyFailures.length} third-party request(s) failed: ${thirdPartyFailures.join(' | ')}`);
 
   const health = await (await fetch(`${API}/health`)).json();
   check('the watcher ran without errors', health.watcher.errors === 0);

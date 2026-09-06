@@ -57,6 +57,15 @@ const de: Dict = {
     'Die Worte lesen sich als {a}, der Betrag steht aber in {b}. Beide Seiten unterschreiben die Worte – achte darauf, dass sie zusammenpassen.',
   'Waiting for your wallet…': 'Warte auf deine Wallet …',
   'chit is not reachable': 'chit ist nicht erreichbar',
+  'In reply to': 'Antwort auf',
+  '{amount} · this becomes a separate chit, and both of you sign it. The one above is untouched.':
+    '{amount} · daraus wird ein eigener Chit, den ihr beide unterschreibt. Der obige bleibt unberührt.',
+  'Ask for a change': 'Änderung vorschlagen',
+  'Ask for half up front': 'Die Hälfte im Voraus verlangen',
+  'Half up front — {line}': 'Hälfte im Voraus – {line}',
+  'On delivery — {line}': 'Bei Lieferung – {line}',
+  'The other half': 'Die andere Hälfte',
+  'Next step of this job': 'Nächster Schritt dieses Auftrags',
   'How chit works': 'So funktioniert chit',
 
   /* ---- the editable rows ---- */

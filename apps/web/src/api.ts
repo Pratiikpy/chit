@@ -40,6 +40,8 @@ export interface ApiChit {
   payoutTx: string | null;
   /** The worker said no. Nothing was paid; nothing more happens with this link. */
   declined: boolean;
+  /** The chit this one answers — a counter-offer, revision, milestone or cancel. Never signed. */
+  parent?: string | null;
   /** Posted and paid by chit's own bounty key. */
   bounty: boolean;
   /** Countersigned by the labelled demo worker, not a person. */
@@ -124,10 +126,10 @@ export const api = {
     return request<ServerInfo>('/health');
   },
 
-  createChit(canonical: string, payerSignature: { publicKeyHex: string; signatureHex: string }) {
+  createChit(canonical: string, payerSignature: { publicKeyHex: string; signatureHex: string }, parent?: string) {
     return request<ApiChit>('/api/chits', {
       method: 'POST',
-      body: JSON.stringify({ canonical, payerSignature }),
+      body: JSON.stringify({ canonical, payerSignature, ...(parent ? { parent } : {}) }),
     });
   },
 

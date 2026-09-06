@@ -290,6 +290,7 @@ export class BlobRepository implements ChitRepository {
       canonical: input.canonical,
       chit: input.chit,
       payerSignature: input.payerSignature,
+      ...(input.parent ? { parent: input.parent } : {}),
       createdAt: now,
     };
     const events: EventRecord[] = [{ event: 'created', detail: null, at: now }];

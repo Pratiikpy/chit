@@ -518,6 +518,15 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
   const params = new URLSearchParams(window.location.search);
 
   let direction: 'paying' | 'earning' = params.get('dir') === 'paying' ? 'paying' : 'earning';
+  /*
+   * The chit this one answers. Every conversation around a chit is a new chit pointed back at
+   * the old one — a counter-offer, a revision, a milestone, a mutual cancel — so there is one
+   * mechanism and no inbox. The link is metadata: it never enters the signed text, because a
+   * new field in the canonical form would change every digest ever computed.
+   */
+  const parentId = params.get('parent');
+  let parentChit: ApiChit | null = null;
+  const parentSlot = el('div', { class: 'slot' });
   let fields: DraftFields | null = null;
   let parserCurrency: string | null = null;
   let quote: Quote | null = null;
@@ -586,6 +595,25 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
     const card = termsEditor({ fields, currencyAlternatives, onChange: () => void reprice() });
     if (quote) card.append(nimRow(nim(quote.luna)));
     understood.append(el('h2', { text: t('What we understood') }), card);
+    if (fields.amountMinor !== null && fields.amountMinor > 1n && !/^(Half up front|Anzahlung)/i.test(fields.text)) {
+      const half = button(
+        t('Ask for half up front'),
+        () => {
+          const whole = fields!.amountMinor!;
+          input.value = t('Half up front — {line}', { line: fields!.text });
+          void (async () => {
+            const parsed = await reparse();
+            if (!parsed) return;
+            parsed.amountMinor = whole / 2n;
+            parsed.edited.add('amount');
+            await reprice();
+          })();
+        },
+        'inline',
+        'shield',
+      );
+      understood.append(el('div', { class: 'row-actions', children: [half] }));
+    }
     if (fields.amountMinor === null || !fields.currency) {
       understood.append(note(t('Add an amount and a currency — "$40", "€120", "₹3500" — so both sides are agreeing to the same number. You can also tap any line above to set it yourself.'), 'calm'));
     } else if (!quote && !feedback) {
@@ -600,7 +628,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
     signButton.disabled = !isReady(fields) || quote === null || detection.tier === 'none';
   }
 
-  async function reparse(): Promise<void> {
+  async function reparse(): Promise<DraftFields | null> {
     const value = input.value.trim();
     feedback?.remove();
     feedback = null;
@@ -608,7 +636,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
       fields = null;
       quote = null;
       render();
-      return;
+      return null;
     }
     const parsed = parseTerms(value);
     const previous = fields;
@@ -625,6 +653,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
       }
     }
     await reprice();
+    return fields;
   }
 
   async function sign(): Promise<void> {
@@ -654,7 +683,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
           quote: quote!,
         });
         const signature = await session.wallet.signText(draft.canonical);
-        const created = await api.createChit(draft.canonical, signature);
+        const created = await api.createChit(draft.canonical, signature, parentId ?? undefined);
         if (!created.ok) {
           messages.append(note(created.error, 'bad'));
           return;
@@ -684,7 +713,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
       header: topBar(navigate, 'compose'),
       title: t('Paste the deal. Get a receipt.'),
       body: [
-        el('p', { class: 'lead', text: t('For the clients you already talk to directly. They pay; you hold a receipt anyone can check. Proof of payment, not protection.') }),
+        parentId ? parentSlot : el('p', { class: 'lead', text: t('For the clients you already talk to directly. They pay; you hold a receipt anyone can check. Proof of payment, not protection.') }),
         segmented,
         input,
         intro,
@@ -703,10 +732,42 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
     else bounty.remove();
   });
 
+  if (parentId) {
+    void api.getChit(parentId).then((result) => {
+      if (!result.ok) return;
+      parentChit = result.value;
+      parentSlot.replaceChildren(
+        el('div', {
+          class: 'card card--pad stack stack--tight',
+          children: [
+            el('div', { class: 'kicker kicker--quiet', text: t('In reply to') }),
+            deal(parentChit.chit.text, true),
+            el('p', { class: 'small muted', text: t('{amount} · this becomes a separate chit, and both of you sign it. The one above is untouched.', { amount: fiat(parentChit) }) }),
+          ],
+        }),
+      );
+    });
+  }
+
   const prefill = params.get('text');
   if (prefill) {
     input.value = prefill;
     void reparse();
+  }
+  /*
+   * An amount carried in the link, in minor units. Used by "the other half" and by "next
+   * milestone", where the number is derived from a chit that already settled rather than
+   * re-typed. The parser still runs first, so the words remain the source of truth.
+   */
+  const carriedAmount = params.get('amountMinor');
+  if (carriedAmount && /^\d+$/.test(carriedAmount)) {
+    void (async () => {
+      const parsed = await reparse();
+      if (!parsed) return;
+      parsed.amountMinor = BigInt(carriedAmount);
+      parsed.edited.add('amount');
+      await reprice();
+    })();
   }
 }
 
@@ -1046,6 +1107,19 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
     });
   }
 
+  /*
+   * The third answer. Until now a worker could sign or disappear; Fiverr and Upwork both have
+   * a custom offer, and sellers negotiate on nearly every order. This opens the composer with
+   * the same words, pointed back at this chit, in the direction that lets the worker set the
+   * number — so the client accepts by paying, and nobody has to sign twice.
+   */
+  const counter = button(
+    t('Ask for a change'),
+    () => navigate(`/?dir=earning&parent=${encodeURIComponent(chit.id)}&amountMinor=${chit.chit.amountMinor}&text=${encodeURIComponent(chit.chit.text)}`),
+    'quiet',
+    'pen',
+  );
+
   mount(
     screen({
       header: topBar(navigate),
@@ -1066,7 +1140,7 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
         walletBanner(detection, chit.shareUrl),
         messages,
       ],
-      actions: [signButton, decline, button(t('Not now'), () => navigate('/'), 'plain')],
+      actions: [signButton, counter, decline, button(t('Not now'), () => navigate('/'), 'plain')],
     }),
   );
 }
@@ -1314,8 +1388,27 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
   const again = button(t('Same again'), () => navigate(`/?dir=${dir}&text=${encodeURIComponent(chit.chit.text)}`), 'quiet', 'pen');
   const print = button(t('Print / save as PDF'), () => window.print(), 'plain', 'print');
   const link = receiptLink(chit);
+  /*
+   * What comes after a settled chit. A half-up-front chit gets its other half, at the same
+   * number; anything else gets the next step of the same job. Both are ordinary chits with a
+   * parent, so the record reads as a series and nothing new had to be signed into the format.
+   */
+  const wasDeposit = /^(Half up front|Anzahlung)/i.test(chit.chit.text);
+  const rest = wasDeposit ? chit.chit.text.replace(/^(Half up front|Anzahlung)\s*[—–-]\s*/i, '') : chit.chit.text;
+  const nextStep = button(
+    wasDeposit ? t('The other half') : t('Next step of this job'),
+    () =>
+      navigate(
+        `/?dir=${dir}&parent=${encodeURIComponent(chit.id)}&amountMinor=${chit.chit.amountMinor}&text=${encodeURIComponent(
+          wasDeposit ? t('On delivery — {line}', { line: rest }) : rest,
+        )}`,
+      ),
+    'quiet',
+    'arrow-right',
+  );
   const actions: Array<HTMLElement | null> = [
     link ? button(t('Open the receipt'), () => navigate(link), 'primary', 'receipt') : null,
+    nextStep,
     again,
     el('div', { class: 'row-actions', children: [print, button(t('Start another'), () => navigate('/'), 'plain')] }),
   ];
