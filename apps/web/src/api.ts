@@ -194,6 +194,16 @@ export const api = {
     });
   },
 
+  /**
+   * What the payment was worth when it landed, which is the figure a tax office asks for.
+   * Allowed to fail — the receipt is complete without it.
+   */
+  settlementValue(id: string) {
+    return request<{ currency: string; valueMinor: string; agreedMinor: string; rate: number; at: number; source: string }>(
+      `/api/chits/${encodeURIComponent(id)}/value`,
+    );
+  },
+
   decline(id: string) {
     return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' });
   },

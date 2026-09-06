@@ -13,7 +13,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { canonicalise, canonicaliseDelivery, chitHash, parseCanonical, type Chit } from '@chit/core';
+import { canonicalise, canonicaliseDelivery, chitHash, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
 import { addressFromPublicKey, verifyChit, verifySignedText } from '@chit/verify';
 import type { StoredChit } from './db.ts';
 import type { ChitRepository } from './repository.ts';
@@ -479,6 +479,42 @@ export function createRoutes(options: RouteOptions) {
     await store.decline(stored.id);
     const updated = await store.get(stored.id);
     return c.json(present(updated ?? stored, baseUrl, flags), 200);
+  });
+
+  /**
+   * What the payment was worth when it landed.
+   *
+   * The chit records the fiat amount both sides agreed and the rate that priced it. Every
+   * tax rule read fixes value at the moment the payment is *received* instead — the IRS's
+   * FAQ Q27 and HMRC's CRYPTO10400 both say so. Those are different numbers whenever the
+   * rate moved between signing and paying, and only one of them belongs on an invoice.
+   *
+   * Computed on demand rather than at settlement, and allowed to fail: a receipt that cannot
+   * show this line is still a receipt, and no page should block on a price API.
+   */
+  app.get('/api/chits/:id/value', async (c) => {
+    if (!options.rates) return c.json({ code: 'rates-unavailable', error: 'Rates are not configured.' }, 503);
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    if (!stored.settledAt || stored.settledLuna === undefined) {
+      return c.json({ code: 'not-settled', error: 'Nothing has been paid yet.' }, 409);
+    }
+
+    const historic = await options.rates.historicPrice(stored.chit.currency, stored.settledAt);
+    if (!historic) return c.json({ code: 'no-history', error: 'No rate is available for that moment.' }, 404);
+
+    // Luna → NIM → fiat minor units, in integers at the last step so nothing rounds twice.
+    const nim = Number(stored.settledLuna) / 100_000;
+    const minorPerUnit = Number(minorUnitsPer(stored.chit.currency));
+    const valueMinor = BigInt(Math.round(nim * historic.rate * minorPerUnit));
+    return c.json({
+      currency: stored.chit.currency,
+      valueMinor: valueMinor.toString(10),
+      agreedMinor: stored.chit.amountMinor.toString(10),
+      rate: historic.rate,
+      at: historic.at,
+      source: 'CoinGecko',
+    });
   });
 
   /**

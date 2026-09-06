@@ -723,6 +723,17 @@ try {
     const link = [...document.querySelectorAll('.receipt a[href]')].find((a) => a.href.includes('nimiq.watch'));
     return link ? getComputedStyle(link, '::after').content : null;
   });
+  // What it was worth when it landed — the figure every tax rule keys on, not the one agreed.
+  const valueResponse = await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}/value`);
+  const valueBody = valueResponse.status === 200 ? await valueResponse.json() : null;
+  check(
+    'the settlement value is computed from a historic rate, or honestly absent',
+    valueResponse.status === 200
+      ? BigInt(valueBody.valueMinor) > 0n && valueBody.rate > 0 && valueBody.source === 'CoinGecko' && valueBody.agreedMinor === '6000'
+      : [404, 503].includes(valueResponse.status),
+    `${valueResponse.status}${valueBody ? ` · ${valueBody.valueMinor} vs agreed ${valueBody.agreedMinor}` : ''}`,
+  );
+
   check('and the explorer link prints its address', !!printedHref && printedHref.includes('nimiq.watch'), printedHref ?? 'no link');
   await shot(worker.page, '38-invoice-print');
   await worker.page.emulateMedia({ media: 'screen' });

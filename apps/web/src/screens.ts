@@ -1434,6 +1434,33 @@ function awaitingPaymentScreen(chit: ApiChit, navigate: Navigate, isWorker: bool
 
 /** The receipt: what was agreed, who paid whom, and where on the chain it lives. */
 function receipt(chit: ApiChit, me: string | null, isWorker: boolean): HTMLElement {
+  /*
+   * The value at the moment of payment, not at the moment of agreement.
+   *
+   * The chit fixes a fiat amount and the rate that priced it; every tax rule read fixes value
+   * when the payment is *received* (IRS FAQ Q27, HMRC CRYPTO10400). When the rate moved in
+   * between, those are two different numbers and only one belongs on an invoice — so both are
+   * shown, each labelled for what it is.
+   */
+  const valueSlot = el('div', { class: 'slot' });
+  if (chit.settled) {
+    void api.settlementValue(chit.id).then((result) => {
+      if (!result.ok) return;
+      const v = result.value;
+      const worth = moneyLocal(v.valueMinor, v.currency);
+      valueSlot.replaceChildren(
+        el('p', {
+          class: 'receipt__worth',
+          text:
+            v.valueMinor === v.agreedMinor
+              ? t('Worth {worth} at the moment it was paid.', { worth })
+              : t('Agreed at {agreed}; worth {worth} at the moment it was paid.', { agreed: moneyLocal(v.agreedMinor, v.currency), worth }),
+        }),
+        el('p', { class: 'receipt__worth receipt__worth--source', text: t('Rate {rate} {currency} per NIM, from {source}, {when}.', { rate: v.rate.toPrecision(4), currency: v.currency, source: v.source, when: formatDate(v.at) }) }),
+      );
+    });
+  }
+
   const paidBy = chit.chit.kind === 'quote' ? chit.settledFrom : chit.chit.payer;
   const paidTo = chit.payTo;
 
@@ -1500,6 +1527,9 @@ function receipt(chit: ApiChit, me: string | null, isWorker: boolean): HTMLEleme
        * Stated per payment and captioned literally: this is arithmetic, not a claim.
        */
       chit.delivery ? el('p', { class: 'receipt__delivered', text: t('Marked delivered on {when}', { when: formatDate(chit.delivery.at) }) }) : null,
+      // What it was worth when it landed. Filled in when the price API answers; absent
+      // otherwise, because a tax line is never worth blocking a receipt for.
+      valueSlot,
       isWorker ? el('p', { class: 'receipt__kept', text: t('You kept all of it. A 20% marketplace cut would have been {amount}.', { amount: nimRound((BigInt(chit.chit.luna) / 5n).toString(10)) }) }) : null,
       factRows(chit, { settled: true }),
     ],

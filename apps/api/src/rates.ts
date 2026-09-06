@@ -17,7 +17,7 @@
  * reused, and the receipt records when it was taken.
  */
 
-import { CryptoCurrency, FiatCurrency, Provider, getExchangeRates } from '@nimiq/utils/fiat-api';
+import { CryptoCurrency, FiatCurrency, Provider, getExchangeRates, getHistoricExchangeRates, isHistorySupportedFiatCurrency } from '@nimiq/utils/fiat-api';
 
 /**
  * CoinGecko, not the library's default.
@@ -94,6 +94,8 @@ export function fiatToLuna(amountMinor: bigint, currency: string, nimPriceInFiat
 
 export class RateService {
   #cache = new Map<string, CachedRate>();
+  /** Historic rates by currency and five-minute bucket. A past price never changes. */
+  #historic = new Map<string, { rate: number; at: number } | null>();
   readonly #fetchRates: typeof getExchangeRates;
 
   /** The fetcher is injectable so tests never depend on a live price API. */
@@ -131,6 +133,42 @@ export class RateService {
       throw new RateUnavailableError(
         `Could not price NIM in ${code}: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  }
+
+  /**
+   * What NIM was worth at a past moment — the number every tax rule actually keys on.
+   *
+   * The IRS (FAQ Q27) and HMRC (CRYPTO10400) both fix the value of crypto received for
+   * services at the moment it is *received*, not the moment a price was agreed. chit's chit
+   * carries the rate at the quote; this is the other one. CoinGecko's history is five-minute
+   * resolution for recent dates, which is finer than a settlement needs.
+   *
+   * Returns null rather than throwing: a receipt that cannot show this line is still a
+   * receipt, and a tax figure is never worth blocking a page for.
+   */
+  async historicPrice(currency: string, atMs: number): Promise<{ rate: number; at: number } | null> {
+    const code = currency.toUpperCase();
+    const key = `${code}@${Math.floor(atMs / 300_000)}`;
+    const cached = this.#historic.get(key);
+    if (cached !== undefined) return cached;
+
+    try {
+      // Only some currencies have history at the provider, and the type says so. Anything
+      // outside that set simply has no line on the receipt.
+      const fiat = code.toLowerCase() as FiatCurrency;
+      if (!isHistorySupportedFiatCurrency(fiat, RATE_PROVIDER)) {
+        this.#historic.set(key, null);
+        return null;
+      }
+      const rates = await getHistoricExchangeRates(CryptoCurrency.NIM, fiat, [atMs], RATE_PROVIDER);
+      const rate = rates.get(atMs);
+      const value = typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? { rate, at: atMs } : null;
+      // Cached either way: a currency with no history should not be asked again per request.
+      this.#historic.set(key, value);
+      return value;
+    } catch {
+      return null;
     }
   }
 
