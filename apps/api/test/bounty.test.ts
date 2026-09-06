@@ -156,3 +156,31 @@ test('the demo worker countersigns with a real signature that verifies', async (
   assert.equal(sig.signatureHex.length, 128);
   assert.ok(demo.address.startsWith('NQ'));
 });
+
+test('a bounty past its deadline is neither listed nor claimable, and a fresh one takes its place', async () => {
+  const repo = new SqliteRepository(':memory:');
+  const rpc = new FakeRpc();
+  const bounty = new BountyService(repo, rpc, undefined, { privateKeyHex: poolHex, chain: 'test', openSlots: 1, deadlineDays: 1 });
+
+  const [stale] = await bounty.ensureOpen();
+  assert.ok(stale);
+
+  // A day and a block later: the old one has expired.
+  rpc.height = stale.chit.deadlineBlock + 1;
+  const [fresh] = await bounty.ensureOpen();
+  assert.ok(fresh);
+  assert.notEqual(fresh.id, stale.id, 'the expired bounty is not listed; a new one was posted');
+  assert.ok(fresh.chit.deadlineBlock > rpc.height, 'the new one is live');
+
+  const tester = KeyPair.generate();
+  const claim = await bounty.claim({
+    stored: stale,
+    signature: signAs(tester, stale.canonical),
+    workerAddress: tester.toAddress().toUserFriendlyAddress(),
+    answer: 'The expired bounty should not still be offered on the home screen.',
+    deviceHash: device(9),
+  });
+  assert.equal(claim.ok, false);
+  assert.equal((claim as { code: string }).code, 'expired');
+  assert.equal(rpc.broadcasts.length, 0, 'nothing was paid for expired work');
+});

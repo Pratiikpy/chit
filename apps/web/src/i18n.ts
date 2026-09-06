@@ -8,7 +8,9 @@
  *
  * `t()` takes the English sentence as the key. That keeps the source readable, makes a
  * missing translation harmless (you see English, never a key), and means a sentence can be
- * changed in one place. Placeholders are `{name}`.
+ * changed in one place. Placeholders are `{name}`. Plurals are two keys — `'{n} chit'` and
+ * `'{n} chits'` — chosen by the caller, because German and English agree on one-versus-many
+ * and a rules engine would be more code than the sentences it serves.
  */
 
 import { getHostLanguage } from '@nimiq/mini-app-sdk';
@@ -16,16 +18,34 @@ import { getHostLanguage } from '@nimiq/mini-app-sdk';
 type Dict = Record<string, string>;
 
 const de: Dict = {
+  /* ---- chrome ---- */
+  'chit home': 'chit Startseite',
+  Activity: 'Verlauf',
+  About: 'Über chit',
+  'New chit': 'Neuer Chit',
+  Bounty: 'Bounty',
+  Details: 'Details',
+  You: 'Du',
+  Copy: 'Kopieren',
+  Copied: 'Kopiert',
+  Save: 'Speichern',
+  Cancel: 'Abbrechen',
+  'Try again': 'Noch einmal',
+  'Start a chit': 'Chit starten',
+  'Start again': 'Von vorn',
+  'Not now': 'Jetzt nicht',
+  Later: 'Später',
+  'Done for now': 'Erst mal fertig',
+
+  /* ---- home ---- */
   'Paste the deal. Get a receipt.': 'Deal einfügen. Beleg bekommen.',
-  'For the clients you already talk to directly. Client pays; you get a receipt proving you were paid for exactly this. Proof of payment, not protection.':
-    'Für Kunden, mit denen du schon direkt sprichst. Der Kunde zahlt; du bekommst einen Beleg, dass du genau dafür bezahlt wurdest. Zahlungsnachweis, kein Schutz.',
+  'For the clients you already talk to directly. They pay; you hold a receipt anyone can check. Proof of payment, not protection.':
+    'Für Kunden, mit denen du schon direkt sprichst. Sie zahlen; du hältst einen Beleg, den jeder prüfen kann. Zahlungsnachweis, kein Schutz.',
   'I’m getting paid': 'Ich werde bezahlt',
   'I’m paying': 'Ich zahle',
   'Which way the money goes': 'In welche Richtung das Geld geht',
-  'Paste the line from the chat where you agreed it. You sign; whoever pays the link has accepted; the NIM lands in your wallet.':
-    'Füge die Zeile aus dem Chat ein, in dem ihr es vereinbart habt. Du unterschreibst; wer den Link bezahlt, hat angenommen; die NIM landen in deiner Wallet.',
-  'Paste the line from the chat where you agreed it. You sign; they sign; you pay once they have. The payment carries the proof.':
-    'Füge die Zeile aus dem Chat ein, in dem ihr es vereinbart habt. Du unterschreibst; die andere Seite unterschreibt; du zahlst, sobald sie es getan hat. Die Zahlung trägt den Beweis.',
+  'You sign. Whoever pays this link has accepted it, and the NIM lands in your wallet.': 'Du unterschreibst. Wer den Link bezahlt, hat angenommen – die NIM landen in deiner Wallet.',
+  'You sign, they sign, then you pay. The payment carries the proof.': 'Du unterschreibst, die andere Seite unterschreibt, dann zahlst du. Die Zahlung trägt den Beweis.',
   'The line you already agreed': 'Die Zeile, die ihr vereinbart habt',
   '$40 for 3 thumbnails by Friday': '40 € für 3 Thumbnails bis Freitag',
   'Sign it': 'Unterschreiben',
@@ -33,22 +53,40 @@ const de: Dict = {
   'Add an amount and a currency — "$40", "€120", "₹3500" — so both sides are agreeing to the same number. You can also tap any line above to set it yourself.':
     'Gib Betrag und Währung an – „40 €“, „$120“ – damit beide Seiten derselben Zahl zustimmen. Du kannst auch jede Zeile oben antippen und selbst setzen.',
   'Pricing it in NIM…': 'Umrechnung in NIM …',
+  'The words read as {a}, but the amount is set in {b}. Both sides sign the words — make sure they agree.':
+    'Die Worte lesen sich als {a}, der Betrag steht aber in {b}. Beide Seiten unterschreiben die Worte – achte darauf, dass sie zusammenpassen.',
   'Waiting for your wallet…': 'Warte auf deine Wallet …',
   'chit is not reachable': 'chit ist nicht erreichbar',
-  'Try again': 'Noch einmal',
-  Bounty: 'Bounty',
-  Activity: 'Verlauf',
-  'New chit': 'Neuer Chit',
-  'Bounty · paid by chit': 'Bounty · bezahlt von chit',
+  'How chit works': 'So funktioniert chit',
+
+  /* ---- the editable rows ---- */
+  Amount: 'Betrag',
+  Currency: 'Währung',
+  By: 'Bis',
+  'How many': 'Wie viele',
+  'In NIM': 'In NIM',
+  'not sure yet': 'noch unklar',
+  today: 'heute',
+  tomorrow: 'morgen',
+  '3 days': '3 Tage',
+  'a week': 'eine Woche',
+  '2 weeks': '2 Wochen',
+  '{n} days': '{n} Tage',
+  '{label}: {value}. Tap to change.': '{label}: {value}. Antippen zum Ändern.',
+  'A whole number, please — this currency has no decimals.': 'Bitte eine ganze Zahl – diese Währung hat keine Nachkommastellen.',
+  'That is not an amount chit can read. Try 40 or 40.50.': 'Das ist kein Betrag, den chit lesen kann. Versuch 40 oder 40,50.',
+  'Set it': 'Übernehmen',
+
+  /* ---- the bounty ---- */
+  'Your first NIM · paid by chit': 'Deine ersten NIM · bezahlt von chit',
+  'Sign it with your answer and the pool pays your wallet in NIM. {n} open now.': 'Unterschreibe mit deiner Antwort und der Pool zahlt NIM an deine Wallet. {n} gerade offen.',
   'Earn {amount} — test chit': '{amount} verdienen – chit testen',
-  'Sign it with your answer and the pool pays your wallet in NIM — your first, if it is empty. {n} open now.':
-    'Unterschreibe mit deiner Antwort und der Pool zahlt NIM an deine Wallet – deine ersten, falls sie leer ist. {n} gerade offen.',
-  'Every bounty is taken for now. The next one opens shortly.': 'Alle Bounties sind gerade vergeben. Die nächste öffnet in Kürze.',
-  'The pool is being funded. When it holds a payout, a real chit you can be paid for appears here.': 'Der Pool wird gerade aufgefüllt. Sobald er eine Auszahlung deckt, erscheint hier ein echter Chit, für den du bezahlt wirst.',
-  'Earn {amount}': '{amount} verdienen',
+  'Your first NIM': 'Deine ersten NIM',
+  'Earn · paid by chit': 'Verdienen · bezahlt von chit',
   'Your answer': 'Deine Antwort',
   'One sentence, in your own words': 'Ein Satz, in deinen Worten',
   'At least 4 words. No links. Something nobody has said yet.': 'Mindestens 4 Wörter. Keine Links. Etwas, das noch niemand gesagt hat.',
+  '{n} word': '{n} Wort',
   '{n} words': '{n} Wörter',
   'Sign and get paid': 'Unterschreiben und bezahlt werden',
   'chit uses this to pay each device one bounty per day.': 'chit nutzt das, um jedem Gerät eine Bounty pro Tag zu zahlen.',
@@ -56,47 +94,66 @@ const de: Dict = {
     'Deine Unterschrift ist deine Antwort. Besteht sie die Regeln – für alle gleich, keine Verlosung – zahlt der Pool diesen Betrag an die Wallet, mit der du unterschreibst, und du hältst einen echten Beleg.',
   'The rules and every payout': 'Die Regeln und jede Auszahlung',
   'This deployment has no bounty pool.': 'Diese Installation hat keinen Bounty-Pool.',
+  'chit pays real chits for a sentence of feedback. Everything about the pool is public: the address, the balance, the rules, and every payout with its transaction.':
+    'chit bezahlt echte Chits für einen Satz Feedback. Alles am Pool ist öffentlich: die Adresse, das Guthaben, die Regeln und jede Auszahlung mit ihrer Transaktion.',
   Pool: 'Pool',
   Balance: 'Guthaben',
   unknown: 'unbekannt',
   'Paid today': 'Heute gezahlt',
+  '{n} payout': '{n} Auszahlung',
+  '{n} payouts': '{n} Auszahlungen',
   of: 'von',
+  Status: 'Status',
+  'Being funded — nothing is offered until it can pay': 'Wird aufgefüllt – nichts wird angeboten, bis er zahlen kann',
   'Open now': 'Gerade offen',
-  Open: 'Offen',
+  '{n} open': '{n} offen',
+  '{amount} each': 'je {amount}',
+  'Take one': 'Eine nehmen',
+  'Every bounty is taken for now.': 'Alle Bounties sind gerade vergeben.',
+  'The next one opens shortly.': 'Die nächste öffnet in Kürze.',
   'The rules': 'Die Regeln',
   'Every payout': 'Jede Auszahlung',
   'None yet.': 'Noch keine.',
+  'The first payout will appear here with its transaction.': 'Die erste Auszahlung erscheint hier mit ihrer Transaktion.',
   'chit pays its own bounty from this pool. It never holds anyone else’s money. Funded by the founder; every payout above is on chain.':
     'chit zahlt seine eigene Bounty aus diesem Pool. Es hält nie das Geld anderer. Vom Gründer finanziert; jede Auszahlung oben steht auf der Chain.',
+
+  /* ---- share and quote ---- */
   'Send this to them': 'Schick das der anderen Seite',
-  'They open it, read the same words you signed, and sign with the Nimiq Pay app — the link opens it. No account, no email.':
-    'Sie öffnet den Link, liest dieselben Worte, die du unterschrieben hast, und unterschreibt mit der Nimiq Pay App – der Link öffnet sie. Kein Konto, keine E-Mail.',
+  'They open it, read the same words you signed, and sign in Nimiq Pay. No account, no email.': 'Sie öffnet den Link, liest dieselben Worte, die du unterschrieben hast, und unterschreibt in Nimiq Pay. Kein Konto, keine E-Mail.',
   'Nothing has been paid yet. You pay once they have signed — this screen will move on by itself.':
     'Noch wurde nichts gezahlt. Du zahlst, sobald unterschrieben wurde – dieser Bildschirm geht von selbst weiter.',
   'Still waiting for their signature. You can close this — it is in your Activity.': 'Warte noch auf die Unterschrift. Du kannst das schließen – es steht in deinem Verlauf.',
   'No one to send it to? Try the demo worker': 'Niemand, dem du es schicken kannst? Probier den Demo-Auftragnehmer',
   'Signing as the demo worker…': 'Unterschreibe als Demo-Auftragnehmer …',
   'Copy the link': 'Link kopieren',
-  Copied: 'Kopiert',
   'Copy failed — select the link below': 'Kopieren fehlgeschlagen – markiere den Link unten',
   'Send it': 'Senden',
   'A chit to sign': 'Ein Chit zum Unterschreiben',
   'A quote to pay': 'Ein Angebot zum Bezahlen',
-  'If they already have the app: ': 'Falls die App schon installiert ist: ',
   'Open in Nimiq Pay': 'In Nimiq Pay öffnen',
   'Get Nimiq Pay': 'Nimiq Pay holen',
-  'Done for now': 'Erst mal fertig',
+  'Continue on your phone': 'Auf dem Handy weitermachen',
+  'Signing and paying happen in the Nimiq Pay app. Scan this with your phone’s camera, or open the link there.':
+    'Unterschreiben und Zahlen passieren in der Nimiq Pay App. Scanne das mit der Kamera deines Handys, oder öffne den Link dort.',
   'Your quote': 'Dein Angebot',
   'Put this where the client is — the chat, your bio, a message. Paying it is accepting it.': 'Platziere das dort, wo der Kunde ist – im Chat, in der Bio, in einer Nachricht. Bezahlen heißt annehmen.',
   'Whoever pays this first is your client. Nothing is held anywhere — the payment lands in your wallet, and this screen moves on when it does.':
     'Wer zuerst zahlt, ist dein Kunde. Nichts wird irgendwo verwahrt – die Zahlung landet in deiner Wallet, und dieser Bildschirm geht dann weiter.',
   'No payment yet. Leave the link where clients can see it — it is in your Activity.': 'Noch keine Zahlung. Lass den Link dort, wo Kunden ihn sehen – er steht in deinem Verlauf.',
   'A quote for you': 'Ein Angebot für dich',
-  'Pay {amount}': '{amount} zahlen',
+  'Pay {amount} in NIM': '{amount} in NIM zahlen',
   'Paying this accepts these exact words. The money goes straight to the wallet that signed the quote — nothing is held on the way.':
     'Mit der Zahlung nimmst du genau diese Worte an. Das Geld geht direkt an die Wallet, die das Angebot unterschrieben hat – nichts wird unterwegs verwahrt.',
-  'Not now': 'Jetzt nicht',
+  'First quote from this wallet.': 'Erstes Angebot von dieser Wallet.',
+  'Paid {n} time': '{n}-mal bezahlt worden',
+  'Paid {n} times': '{n}-mal bezahlt worden',
+  'by {n} client': 'von {n} Kunden',
+  'by {n} clients': 'von {n} Kunden',
+
+  /* ---- countersign ---- */
   'Someone wants to agree this with you': 'Jemand möchte das mit dir vereinbaren',
+  'You would be paid': 'Du würdest bekommen',
   'Signing means you agree to these exact words. It does not move any money — they pay after you sign, and the payment goes to the wallet you sign with.':
     'Unterschreiben heißt, du stimmst genau diesen Worten zu. Es bewegt kein Geld – gezahlt wird nach deiner Unterschrift, an die Wallet, mit der du unterschreibst.',
   Decline: 'Ablehnen',
@@ -108,6 +165,7 @@ const de: Dict = {
   'Send a new one': 'Neuen schicken',
   'Could not load this wallet’s record.': 'Der Verlauf dieser Wallet konnte nicht geladen werden.',
   'First chit from this wallet · {amount} attached': 'Erster Chit von dieser Wallet · {amount} hinterlegt',
+  'Paid {n} chit': '{n} Chit bezahlt',
   'Paid {n} chits': '{n} Chits bezahlt',
   'usually within {d}': 'meist innerhalb von {d}',
   'none left unpaid': 'keiner unbezahlt geblieben',
@@ -116,13 +174,31 @@ const de: Dict = {
   minutes: 'Minuten',
   hours: 'Stunden',
   days: 'Tagen',
-  'They signed. Time to pay.': 'Unterschrieben. Zeit zu zahlen.',
+
+  /* ---- people ---- */
+  From: 'Von',
+  'Quoted by': 'Angeboten von',
   'Goes to': 'Geht an',
+  Wallet: 'Wallet',
+  'Name this wallet': 'Wallet benennen',
+  Rename: 'Umbenennen',
+  'A name for this wallet, kept on this device': 'Ein Name für diese Wallet, nur auf diesem Gerät',
+  'e.g. Acme Studio': 'z. B. Acme Studio',
+  'Only on this device. Never sent anywhere, never shown to anyone else.': 'Nur auf diesem Gerät. Wird nirgendwohin gesendet und niemandem sonst gezeigt.',
+
+  /* ---- pay ---- */
+  'They signed. Time to pay.': 'Unterschrieben. Zeit zu zahlen.',
   'Waiting for their signature before there is anywhere to send this.': 'Warte auf die Unterschrift, bevor es ein Ziel für die Zahlung gibt.',
-  Later: 'Später',
+  'The exact NIM is priced when you tap Pay, so the agreed amount stays whole. It goes straight to their wallet — nothing is held on the way, and a payment cannot be reversed.':
+    'Die genauen NIM werden beim Tippen auf Zahlen berechnet, damit der vereinbarte Betrag voll bleibt. Es geht direkt an die andere Wallet – nichts wird unterwegs verwahrt, und eine Zahlung lässt sich nicht rückgängig machen.',
   'No NIM yet?': 'Noch keine NIM?',
-  'NIM is the coin this pays in. Nimiq Pay itself cannot buy it; the Nimiq Wallet at wallet.nimiq.com can, by card in most countries, and then you send it to your Nimiq Pay address. Or earn your first NIM here: the bounty pays a real chit for a sentence of feedback.':
-    'NIM ist die Münze, in der hier gezahlt wird. Nimiq Pay selbst kann sie nicht kaufen; die Nimiq Wallet auf wallet.nimiq.com kann es, per Karte in den meisten Ländern – dann schickst du sie an deine Nimiq-Pay-Adresse. Oder verdiene deine ersten NIM hier: Die Bounty zahlt einen echten Chit für einen Satz Feedback.',
+  'NIM is the coin this pays in. Nimiq Pay holds it but does not sell it. The Nimiq Wallet at wallet.nimiq.com sells NIM by card or bank transfer in many countries — fees 1–4%, a few dollars minimum, availability depends on where you are — and you then send it to your Nimiq Pay address.':
+    'NIM ist die Münze, in der hier gezahlt wird. Nimiq Pay verwahrt sie, verkauft sie aber nicht. Die Nimiq Wallet auf wallet.nimiq.com verkauft NIM per Karte oder Überweisung in vielen Ländern – Gebühren 1–4 %, ein paar Dollar Mindestbetrag, Verfügbarkeit je nach Land – und dann schickst du sie an deine Nimiq-Pay-Adresse.',
+  'Or earn your first NIM here: the bounty on the home screen pays a real chit for one sentence of feedback.': 'Oder verdiene deine ersten NIM hier: Die Bounty auf der Startseite zahlt einen echten Chit für einen Satz Feedback.',
+  'Turning NIM into money': 'Aus NIM Geld machen',
+  'The NIM is in your Nimiq Pay wallet now, and it is yours — nothing is held by chit. To turn it into your own currency, send it to an exchange that lists NIM and sell it there, or use the Nimiq Wallet’s swap into USDC or USDT and cash out from that. Which of these is open to you depends on your country; chit does not sell or swap anything itself.':
+    'Die NIM sind jetzt in deiner Nimiq-Pay-Wallet und gehören dir – chit verwahrt nichts. Um sie in deine Währung zu tauschen, schick sie an eine Börse, die NIM listet, und verkaufe sie dort, oder nutze den Swap der Nimiq Wallet in USDC oder USDT und zahle von dort aus. Was davon für dich offen ist, hängt von deinem Land ab; chit selbst verkauft oder tauscht nichts.',
+  'Many freelancers simply keep it: the next chit you pay a collaborator, or the next tool you buy, can be paid in NIM directly.': 'Viele Freelancer behalten sie einfach: Den nächsten Chit an eine Kollegin oder das nächste Tool kannst du direkt in NIM zahlen.',
   'The rate moved since this was signed. Keeping the agreed {amount} whole is now {nim}.': 'Der Kurs hat sich seit der Unterschrift bewegt. Damit die vereinbarten {amount} voll bleiben, sind es jetzt {nim}.',
   'Sent. Watching the chain…': 'Gesendet. Beobachte die Chain …',
   'Your payment was sent. It has not appeared on chain yet — that is unusual but not lost. Check again in a moment.': 'Deine Zahlung wurde gesendet. Sie ist noch nicht auf der Chain – ungewöhnlich, aber nicht verloren. Prüf gleich noch einmal.',
@@ -135,9 +211,12 @@ const de: Dict = {
   'You signed it': 'Du hast unterschrieben',
   'Both signed': 'Beide haben unterschrieben',
   'Check now': 'Jetzt prüfen',
+
+  /* ---- receipt ---- */
   'Paid on': 'Bezahlt am',
   Block: 'Block',
   Transaction: 'Transaktion',
+  'View on nimiq.watch': 'Auf nimiq.watch ansehen',
   'Paid by': 'Bezahlt von',
   'Paid to': 'Bezahlt an',
   'You were paid': 'Du wurdest bezahlt',
@@ -151,31 +230,31 @@ const de: Dict = {
   'Same again': 'Noch einmal dasselbe',
   'Print / save as PDF': 'Drucken / als PDF sichern',
   'Start another': 'Neuen starten',
-  'Nothing to show': 'Nichts anzuzeigen',
-  'No chit has settled with that transaction. Check the link, or the payment may not have landed yet.': 'Mit dieser Transaktion wurde kein Chit abgewickelt. Prüf den Link, oder die Zahlung ist noch nicht angekommen.',
-  'Go to chit': 'Zu chit',
-  'This is genuine': 'Das ist echt',
-  'This does not check out': 'Das stimmt nicht',
-  'Signatures and payment match': 'Unterschriften und Zahlung passen zusammen',
-  'Verification failed': 'Prüfung fehlgeschlagen',
-  'This is a test-network chit. The signatures are real, but no real money moved — the amount below is not spendable.': 'Das ist ein Testnetz-Chit. Die Unterschriften sind echt, aber es floss kein echtes Geld – der Betrag unten ist nicht ausgebbar.',
-  For: 'Für',
-  Amount: 'Betrag',
-  'In NIM': 'In NIM',
   Deliverables: 'Lieferungen',
   Due: 'Fällig',
   passed: 'verstrichen',
-  today: 'heute',
   'in about {n} days': 'in etwa {n} Tagen',
   Deadline: 'Frist',
-  'Quoted by': 'Angeboten von',
-  From: 'Von',
+  'block {n}': 'Block {n}',
+  'Rate taken at': 'Kurs genommen bei',
+  'Chit id': 'Chit-ID',
+
+  /* ---- verify ---- */
+  'Nothing to show': 'Nichts anzuzeigen',
+  'No chit has settled with that transaction. Check the link, or the payment may not have landed yet.': 'Mit dieser Transaktion wurde kein Chit abgewickelt. Prüf den Link, oder die Zahlung ist noch nicht angekommen.',
+  'This is genuine': 'Das ist echt',
+  'This does not check out': 'Das stimmt nicht',
+  'Verification failed': 'Prüfung fehlgeschlagen',
+  'This is a test-network chit. The signatures are real, but no real money moved — the amount below is not spendable.': 'Das ist ein Testnetz-Chit. Die Unterschriften sind echt, aber es floss kein echtes Geld – der Betrag unten ist nicht ausgebbar.',
   'quote — paying accepted it': 'Angebot – mit der Zahlung angenommen',
   yes: 'ja',
   no: 'nein',
   'On chain': 'Auf der Chain',
   'not yet': 'noch nicht',
   'Checked in your browser, against the chain': 'In deinem Browser geprüft, gegen die Chain',
+  'The chain disagrees with these words': 'Die Chain widerspricht diesen Worten',
+  'Checked by chit’s server': 'Von chits Server geprüft',
+  'Your browser’s own check': 'Die eigene Prüfung deines Browsers',
   'Digest in the payment': 'Prüfsumme in der Zahlung',
   'matches these words': 'passt zu diesen Worten',
   'does NOT match': 'passt NICHT',
@@ -189,28 +268,53 @@ const de: Dict = {
   'Show exactly what was signed': 'Genau zeigen, was unterschrieben wurde',
   'Every line above was signed by the wallets involved and anchored to the payment. Nothing here was typed by chit.': 'Jede Zeile oben wurde von den beteiligten Wallets unterschrieben und an die Zahlung gebunden. Nichts davon hat chit getippt.',
   'What is chit?': 'Was ist chit?',
-  Wallet: 'Wallet',
+
+  /* ---- activity ---- */
   'Paid to you': 'An dich gezahlt',
+  '{n} chit': '{n} Chit',
   '{n} chits': '{n} Chits',
+  'from {n} payer': 'von {n} Zahlenden',
   'from {n} payers': 'von {n} Zahlenden',
   Kept: 'Behalten',
-  'what a 20% marketplace cut would have been': 'was ein 20 %-Marktplatzanteil gewesen wäre',
+  'a 20% marketplace cut': 'ein 20 %-Marktplatzanteil',
   'As a payer': 'Als Zahlender',
   'paid {n}': '{n} bezahlt',
   '{n} awaiting': '{n} ausstehend',
-  'Nothing yet. Your first chit will appear here the moment it is signed.': 'Noch nichts. Dein erster Chit erscheint hier, sobald er unterschrieben ist.',
+  'Nothing yet': 'Noch nichts',
+  'Your first chit will appear here the moment it is signed.': 'Dein erster Chit erscheint hier, sobald er unterschrieben ist.',
   Declined: 'Abgelehnt',
   Quote: 'Angebot',
   'Signed — unpaid': 'Unterschrieben – unbezahlt',
   'Waiting for signature': 'Wartet auf Unterschrift',
+
+  /* ---- about ---- */
+  'What chit is': 'Was chit ist',
+  'A receipt for a deal you already made. You paste the one line you agreed in a chat, both wallets sign it with Nimiq Pay, and the payment carries the agreement’s digest. The receipt is the contract, and anyone can check it against the chain.':
+    'Ein Beleg für einen Deal, den du schon gemacht hast. Du fügst die eine Zeile ein, die ihr im Chat vereinbart habt, beide Wallets unterschreiben sie mit Nimiq Pay, und die Zahlung trägt die Prüfsumme der Vereinbarung. Der Beleg ist der Vertrag, und jeder kann ihn gegen die Chain prüfen.',
+  'What it never does': 'Was es nie tut',
+  'Hold your money. Every payment goes straight from one wallet to the other; there is no balance and no withdrawal.': 'Dein Geld verwahren. Jede Zahlung geht direkt von einer Wallet zur anderen; es gibt kein Guthaben und keine Auszahlung.',
+  'Take a cut. There is no fee. A NIM transaction is free and lands in about a second.': 'Einen Anteil nehmen. Es gibt keine Gebühr. Eine NIM-Transaktion ist kostenlos und kommt in etwa einer Sekunde an.',
+  'Ask for an account. Your wallet is your identity; your record is computed from settled payments and nothing else.': 'Nach einem Konto fragen. Deine Wallet ist deine Identität; dein Verlauf wird nur aus abgewickelten Zahlungen berechnet.',
+  'Protect you. This is proof of payment, not escrow or a dispute service. Use it with clients you already talk to directly.': 'Dich schützen. Das ist ein Zahlungsnachweis, kein Treuhandservice und keine Streitschlichtung. Nutze es mit Kunden, mit denen du schon direkt sprichst.',
+  'How a receipt is checked': 'Wie ein Beleg geprüft wird',
+  'The words are hashed; that hash is the 64-byte memo of the NIM payment. A receipt link carries the words, so your browser recomputes the hash and reads the transaction from a public Nimiq node — no chit server needed.':
+    'Die Worte werden gehasht; dieser Hash ist die 64-Byte-Nachricht der NIM-Zahlung. Ein Beleg-Link trägt die Worte, also berechnet dein Browser den Hash neu und liest die Transaktion von einem öffentlichen Nimiq-Knoten – ganz ohne chit-Server.',
+  'The bounty': 'Die Bounty',
+  'chit pays real chits for a sentence of feedback, from a pool funded by the founder. The address, balance, rules and every payout are public.': 'chit bezahlt echte Chits für einen Satz Feedback, aus einem vom Gründer finanzierten Pool. Adresse, Guthaben, Regeln und jede Auszahlung sind öffentlich.',
+  'See the pool': 'Den Pool ansehen',
+  'Open source under the MIT licence. Built for the Nimiq Mini Apps Competition, Cycle 2, 2026. Signatures are verified by chit’s server; payments by the Nimiq chain.':
+    'Open Source unter MIT-Lizenz. Gebaut für die Nimiq Mini Apps Competition, Cycle 2, 2026. Unterschriften prüft chits Server; Zahlungen prüft die Nimiq-Chain.',
+  'Nothing about you is stored until you sign something.': 'Nichts über dich wird gespeichert, bis du etwas unterschreibst.',
+
+  /* ---- errors ---- */
   'Nothing here': 'Hier ist nichts',
   'That link does not point at anything in chit.': 'Dieser Link zeigt auf nichts in chit.',
-  'Start a chit': 'Chit starten',
   'Not found': 'Nicht gefunden',
+  'Something broke': 'Etwas ist kaputtgegangen',
+  'chit hit an error it did not expect. Anything already signed is safe on the server, and anything paid is on chain.': 'chit ist auf einen unerwarteten Fehler gestoßen. Alles bereits Unterschriebene ist sicher auf dem Server, alles Bezahlte auf der Chain.',
   'Test network — the signatures are real, the money is not.': 'Testnetz – die Unterschriften sind echt, das Geld nicht.',
   'Demo mode — signatures here are for show and will not verify. Open in Nimiq Pay to sign for real.': 'Demo-Modus – Unterschriften hier sind nur Anschauung und werden nicht verifiziert. Öffne es in Nimiq Pay, um echt zu unterschreiben.',
   'Signing and paying happen in the Nimiq Pay app. Open this there — Nimiq Pay may ask you to confirm the first time.': 'Unterschreiben und Zahlen passieren in der Nimiq Pay App. Öffne das dort – Nimiq Pay fragt beim ersten Mal vielleicht nach einer Bestätigung.',
-  'Signing and paying happen in the Nimiq Pay app on your phone. Scan the code below with it, or open this link there.': 'Unterschreiben und Zahlen passieren in der Nimiq Pay App auf deinem Handy. Scanne den Code unten damit, oder öffne diesen Link dort.',
   'Your wallet is on the Nimiq test network, but this chit is for real NIM. Switch Nimiq Pay to mainnet and try again.': 'Deine Wallet ist im Nimiq-Testnetz, aber dieser Chit ist für echte NIM. Stelle Nimiq Pay auf Mainnet und versuch es noch einmal.',
   'Your wallet is on Nimiq mainnet, but this is a test-network chit. Switch Nimiq Pay to testnet and try again.': 'Deine Wallet ist im Nimiq-Mainnet, aber das ist ein Testnetz-Chit. Stelle Nimiq Pay auf Testnetz und versuch es noch einmal.',
 };
@@ -232,4 +336,9 @@ export function initLanguage(override?: string): string {
 export function t(english: string, vars: Record<string, string | number> = {}): string {
   const template = active[english] ?? english;
   return template.replace(/\{(\w+)\}/g, (_, key: string) => (key in vars ? String(vars[key]) : `{${key}}`));
+}
+
+/** Every English key with a German sentence — exported so a test can prove coverage. */
+export function translatedKeys(): string[] {
+  return Object.keys(de);
 }

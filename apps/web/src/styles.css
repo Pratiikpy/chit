@@ -2,75 +2,101 @@
  * chit — styles.
  *
  * The design system is Prateek's own ("Minimalist Apple-inspired app", LIFTWITHOG.dc.html):
- * Instrument Sans on warm paper, near-black ink, a single warm-red accent. The values below
- * are taken from that file by counting what it actually uses, not by eye — #111112 appears
- * 88 times, #8A8A90 39, #E4E2DE 19, and borders are always 1px solid #E4E2DE.
+ * Instrument Sans on warm paper, near-black ink, a single warm-red accent. The ground and
+ * the accent are taken from that file by counting what it actually uses — #111112 appears 88
+ * times, #E4E2DE 19, and borders are always 1px solid.
  *
- * It replaces the nimiq-css palette chit shipped with. That was chosen to look native
- * inside Nimiq Pay, which was a reasonable default and the wrong product.
+ * The greys are NOT taken from it. The file's #8A8A90 measures 2.96:1 on this paper, under
+ * the 4.5:1 that 16px text needs, and the accent measures 3.4:1 as link text. Both were in
+ * use on every screen. The ramp below was chosen by measuring each pair (scripts/
+ * design-metrics.mjs): every text colour clears 4.5:1 on every surface it sits on, in both
+ * schemes, and the accent is split into the UI colour and a deeper text colour.
  *
  * Three constraints still drive the layout, and all three come from measurements:
  *
  * 1. `safe-area-inset-bottom` reports 0 on some devices while the home indicator still
  *    overlaps the page (research/verification/02 §7). So the bottom padding is
- *    `max(inset, 24px)` — never the inset alone.
+ *    `max(inset, 34px)` — never the inset alone.
  * 2. The reported viewport width is unreliable in the WebView, so every layout is fluid
  *    with a max-width. Nothing is positioned by a measured pixel width.
  * 3. Design is 10 of 100 points and the bar is "a stranger reaches the point within 60
- *    seconds without instructions". Clarity, generous targets, one idea per screen.
+ *    seconds without instructions". One idea per screen; the money and the words are the
+ *    hero; everything a person does not need to decide is folded away, never deleted.
  */
 
 @import 'nimiq-css/css/preflight.css';
 
 /*
- * `nimiq-css/css/colors.css` is no longer imported: nothing references a --nq-* token now
- * that the palette below is the system. `fonts.css` was never imported — it declares
- * @font-face rules for files the package does not ship, producing two 404s on every load,
- * and zero console errors is part of a passing page.
+ * `nimiq-css/css/colors.css` is not imported: nothing references a --nq-* token now that the
+ * palette below is the system. `fonts.css` was never imported — it declares @font-face rules
+ * for files the package does not ship, producing two 404s on every load, and zero console
+ * errors is part of a passing page.
  *
- * Instrument Sans is loaded from Google Fonts in index.html with preconnect, exactly as the
- * source design does. Every stack below still names real fallbacks, so a blocked or slow
- * font download degrades to the platform UI font rather than to nothing.
+ * Instrument Sans is loaded from Google Fonts in index.html with preconnect. Every stack
+ * below still names real fallbacks, so a blocked or slow font download degrades to the
+ * platform UI font rather than to nothing.
  */
 
 :root {
-  /* Ground and surfaces — warm paper, not white. */
+  /* Ground and surfaces — warm paper, not white. `raised` is for the one card that matters. */
   --chit-page: #efeeeb;
   --chit-surface: #f6f5f3;
-  --chit-subtle: #edebe7;
+  --chit-raised: #fbfaf8;
+  --chit-subtle: #e8e6e1;
 
-  /* Type. */
+  /* Type. Every one of these clears 4.5:1 on page, surface and subtle (measured). */
   --chit-ink: #111112;
-  --chit-secondary: #6b6b70;
-  --chit-muted: #8a8a90;
+  --chit-secondary: #55555b;   /* 5.7:1 on page */
+  --chit-muted: #66666c;       /* 4.9:1 on page — the lightest grey any sentence may be */
+  --chit-faint: #8a8a90;       /* decoration only: dividers, disabled, skeletons. Never text. */
 
-  --chit-line: #e4e2de;
+  --chit-line: #e2dfda;
+  --chit-line-strong: #cfccc6;
 
-  /* One accent, used sparingly: it is the colour of "do this now". */
+  /* One accent. `accent` is a UI colour (kicker rule, dot, pressed border); `accent-text` is
+   * what a sentence or a link may be — the same hue, deep enough to read at 14px (4.6:1). */
   --chit-accent: #e8452c;
-  --chit-accent-hover: #c33a24;
-  --chit-accent-ink: #ffffff;
+  --chit-accent-text: #c33a24;
+  --chit-accent-soft: color-mix(in oklab, #e8452c 9%, var(--chit-surface));
 
   /* Primary actions are ink, not accent — the accent is a highlight, not a button colour. */
   --chit-primary: #111112;
   --chit-primary-ink: #ffffff;
+  --chit-primary-press: #2a2a2d;
 
   --chit-good: #1f7a46;
+  --chit-good-soft: color-mix(in oklab, #1f7a46 11%, var(--chit-surface));
   --chit-warn: #8a5a00;
+  --chit-warn-soft: color-mix(in oklab, #8a5a00 11%, var(--chit-surface));
   --chit-bad: #c33a24;
+  --chit-bad-soft: color-mix(in oklab, #c33a24 9%, var(--chit-surface));
 
   --chit-sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   /*
    * The source design has no monospace at all. chit keeps one, deliberately and narrowly:
    * a Nimiq address, a transaction hash and a chit digest have to be compared character by
    * character, and a proportional font makes 0/O and 1/l ambiguous exactly where being
-   * wrong costs money. It is never used for prose.
+   * wrong costs money. It is never used for prose, and never for money.
    */
   --chit-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
-  --chit-radius: 14px;
-  --chit-radius-lg: 22px;
-  --chit-radius-sm: 12px;
+  /*
+   * Radius by role, not one value everywhere: controls are tighter than the cards that hold
+   * them, and the sheet-like surfaces (the deal, the receipt) are the roundest.
+   */
+  --r-control: 14px;
+  --r-card: 18px;
+  --r-sheet: 22px;
+  --r-small: 10px;
+
+  /* Motion vocabulary. Enter decelerates, exit accelerates, feedback is instant-feeling. */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --t-micro: 100ms;
+  --t-short: 150ms;
+  --t-medium: 240ms;
+
+  --shadow-raised: 0 1px 0 rgba(17, 17, 18, 0.04), 0 14px 36px -24px rgba(17, 17, 18, 0.28);
 
   /* Never the raw inset — see note 1 above. */
   --chit-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
@@ -84,7 +110,7 @@
  * class the moment `window.nimiqPay` is seen, before first paint.
  */
 html.in-nimiq-pay {
-  --chit-top: 0px;
+  --chit-top: 8px;
 }
 
 /*
@@ -93,28 +119,48 @@ html.in-nimiq-pay {
  * The source design is light-only (it is labelled "390×844 · light"), so there is nothing
  * to copy. This inverts the same relationship rather than inventing a second palette: the
  * ink becomes the ground, paper becomes the type, the accent is held at the same hue and
- * lifted only enough to stay legible on a dark surface.
+ * lifted only enough to stay legible on a dark surface. Measured: every text pair ≥ 5:1.
  */
 @media (prefers-color-scheme: dark) {
   :root {
     --chit-page: #111112;
     --chit-surface: #1a1a1c;
-    --chit-subtle: #232326;
-    --chit-ink: #f6f5f3;
+    --chit-raised: #1f1f22;
+    --chit-subtle: #242427;
+    --chit-ink: #f4f3f1;
     --chit-secondary: #b4b4ba;
-    --chit-muted: #8a8a90;
+    --chit-muted: #94949a;
+    --chit-faint: #5a5a60;
     --chit-line: #2c2c30;
+    --chit-line-strong: #3a3a40;
     --chit-accent: #ff5c40;
-    --chit-accent-hover: #e8452c;
-    --chit-primary: #f6f5f3;
+    --chit-accent-text: #ff6b52;
+    --chit-accent-soft: color-mix(in oklab, #ff5c40 14%, var(--chit-surface));
+    --chit-primary: #f4f3f1;
     --chit-primary-ink: #111112;
+    --chit-primary-press: #dcdad6;
     --chit-good: #4bbd7e;
+    --chit-good-soft: color-mix(in oklab, #4bbd7e 14%, var(--chit-surface));
     --chit-warn: #e0a955;
+    --chit-warn-soft: color-mix(in oklab, #e0a955 14%, var(--chit-surface));
     --chit-bad: #ff7a63;
+    --chit-bad-soft: color-mix(in oklab, #ff7a63 12%, var(--chit-surface));
+    --shadow-raised: none;
   }
 }
 
 * { box-sizing: border-box; }
+
+/*
+ * nimiq-css's preflight hides every empty `span` and `p` (`:where(p,span):empty:not(...)`),
+ * at specificity (0,2,0). Three of chit's marks are empty spans by design — the status dot,
+ * the identicon disc before its image lands, and the busy spinner — and all three were
+ * silently invisible until the rendered page was measured. Each is re-declared here at the
+ * same specificity, later in the cascade, so it wins.
+ */
+.status .status__dot { display: block; }
+.idn.idn { display: inline-grid; }
+.spin.spin { display: inline-block; }
 
 /*
  * The typeface is claimed through nimiq-css's own variables, not element by element.
@@ -154,10 +200,21 @@ html, body {
   font-size: 16px;              /* never below 16px — smaller triggers iOS zoom on focus */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overscroll-behavior-y: none;  /* no rubber-banding inside the host app */
 }
 
 #app { min-height: 100dvh; }
+
+/*
+ * Everything a thumb touches: no 300ms tap delay, no grey flash, no accidental text
+ * selection while pressing. These three are most of what makes a page feel like an app.
+ */
+button, a, summary, [role='button'] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button, summary, .seg__item, .chip { user-select: none; -webkit-user-select: none; }
 
 /* ---------- layout ---------- */
 
@@ -171,6 +228,17 @@ html, body {
   padding: var(--chit-top) 20px var(--chit-bottom);
 }
 
+/*
+ * A screen change is a view being pushed, so it arrives like one: a short rise and fade,
+ * enter-eased. `mount()` adds the class only on navigation, never on first paint — the
+ * first screen must not spend a quarter second animating before the user can act.
+ */
+.screen--enter { animation: screen-in var(--t-medium) var(--ease-out) both; }
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* Nothing inside a screen may be wider than the screen. */
 .screen * { max-width: 100%; }
 /*
@@ -179,7 +247,7 @@ html, body {
  * viewport. The Activity screen did exactly that and was cut off at the edge. Every
  * direct child of the body column and every list row is allowed to shrink.
  */
-.screen__body > *, .list, .list__item, .card { min-width: 0; }
+.screen__body > *, .list, .list__item, .card, .hero, .receipt { min-width: 0; }
 
 .screen__body {
   flex: 1;
@@ -195,19 +263,31 @@ html, body {
   align-content: start;
 }
 
-/* The primary action sits in thumb reach and stays there while the body scrolls. */
+/*
+ * The primary action sits in thumb reach and stays there while the body scrolls. The bar
+ * is translucent and blurred so content is seen passing under it, and it grows a hairline
+ * the moment anything is actually underneath (`.screen__actions--floating`, set by an
+ * observer in `ui.ts`) — a native detail that tells the eye "there is more above".
+ */
 .screen__actions {
   position: sticky;
   bottom: 0;
+  z-index: 2;
   display: grid;
-  gap: 10px;
-  padding-top: 16px;
-  padding-bottom: 4px;
-  background: linear-gradient(to top, var(--chit-page) 72%, transparent);
+  gap: 8px;
+  margin: 0 -20px;
+  padding: 12px 20px calc(var(--chit-bottom) - 26px);
+  background: color-mix(in oklab, var(--chit-page) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(14px) saturate(1.15);
+  border-top: 1px solid transparent;
+  transition: border-color var(--t-short) var(--ease-out);
 }
+.screen__actions--floating { border-top-color: var(--chit-line); }
+/* The sentinel that tells the observer whether the body has scrolled under the bar. */
+.screen__sentinel { height: 1px; margin-top: -1px; }
 
 .stack { display: grid; gap: 14px; align-content: start; }
-/* An empty slot must not spend a gap — placeholders left visible holes in the layout. */
 /*
  * Only a nested empty *stack* is hidden — never a bare `:empty`.
  *
@@ -215,55 +295,122 @@ html, body {
  * content is a placeholder is `:empty` in CSS. It hid the main input of the app, which
  * every test still passed through. Scoped to the container class it was written for.
  */
-.stack > .stack:empty { display: none; }
+.stack > .stack:empty, .stack > div:empty:not(.skeleton) { display: none; }
 .stack--tight { gap: 8px; }
+.stack--loose { gap: 20px; }
 
 /* ---------- type ---------- */
 
-h1 { font-size: 1.75rem; font-weight: 600; line-height: 1.12; margin: 0 0 8px; letter-spacing: -0.03em; }
+/*
+ * A scale, not ad-hoc sizes: 12 kicker · 14 small · 16 body · 17 lead · 18 h2 · 28–32 h1 ·
+ * 40 / 52 money. Weights: 400 prose, 500 labels and links, 600 headings and buttons.
+ */
+h1 {
+  font-size: clamp(1.75rem, 1.4rem + 1.4vw, 2rem);
+  font-weight: 600;
+  line-height: 1.12;
+  margin: 0 0 6px;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
 /*
  * The heading is focused programmatically on every screen change so a screen reader
  * announces where it landed. That is not a keyboard focus, so it must not draw a ring —
  * it rendered as a black box around the title.
  */
 h1[tabindex='-1']:focus { outline: none; }
-h2 { font-size: 1.05rem; margin: 0 0 4px; }
-p  { margin: 0 0 10px; }
+h2 { font-size: 1.125rem; line-height: 1.35; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.015em; }
+p  { margin: 0 0 8px; }
+p:last-child { margin-bottom: 0; }
+.lead { font-size: 1.0625rem; line-height: 1.5; color: var(--chit-secondary); }
 .muted { color: var(--chit-muted); }
-.small { font-size: 0.9rem; }
+.secondary { color: var(--chit-secondary); }
+.small { font-size: 0.875rem; line-height: 1.45; }
+.num { font-variant-numeric: tabular-nums; }
 
 .mono {
   font-family: var(--chit-mono);
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
   /* Chit ids, addresses and URLs are long and have no spaces. They must still wrap. */
   overflow-wrap: anywhere;
 }
 
-/* Money is the hero on every screen that has any. */
-.amount { font-size: 2.6rem; font-weight: 600; letter-spacing: -0.035em; line-height: 1.05; }
-.amount--huge { font-size: 3.4rem; }
-.amount__sub { font-size: 0.95rem; color: var(--chit-muted); }
+/*
+ * The signed words. Shown as what they are — a quotation — rather than as a table row
+ * whose value happens to be long. Left-aligned, a rule beside it, room to breathe.
+ */
+.deal {
+  margin: 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--chit-ink);
+  font-size: 1.0625rem;
+  line-height: 1.45;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.deal--quiet { border-left-color: var(--chit-line-strong); font-weight: 400; }
+
+/* The kicker: small caps that name what a block is. Accent-text so it reads at 12px. */
+.kicker {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--chit-accent-text);
+  margin: 0 0 6px;
+}
+.kicker--quiet { color: var(--chit-muted); }
+
+/* ---------- money: the hero ---------- */
+
+.hero { display: grid; gap: 2px; }
+.hero__label { font-size: 0.875rem; color: var(--chit-secondary); font-weight: 500; }
+.hero__amount {
+  font-size: 2.5rem;
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+.hero--huge .hero__amount { font-size: 3.25rem; }
+.hero__sub {
+  font-size: 0.9375rem;
+  color: var(--chit-secondary);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ---------- surfaces ---------- */
 
 .card {
   background: var(--chit-surface);
   border: 1px solid var(--chit-line);
-  border-radius: var(--chit-radius);
-  padding: 16px;
+  border-radius: var(--r-card);
+  padding: 4px 18px;
 }
-
+.card--pad { padding: 16px 18px; }
+.card--raised { background: var(--chit-raised); box-shadow: var(--shadow-raised); }
 .card--flat { background: transparent; }
+/* The bounty: an offer, tinted, with an accent rule rather than a red border all round. */
+.card--accent {
+  padding: 14px 18px 16px;
+  background: var(--chit-accent-soft);
+  border-color: color-mix(in oklab, var(--chit-accent) 22%, var(--chit-line));
+}
+.card--accent .btn { margin-top: 12px; }
 
 .line {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 9px 0;
+  align-items: baseline;
+  gap: 16px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--chit-line);
 }
 .line:last-child { border-bottom: 0; }
-
 /*
  * `min-width: 0` on both sides is load-bearing.
  *
@@ -272,8 +419,9 @@ p  { margin: 0 0 10px; }
  * it, and every card on the share screen ran off the edge of the phone.
  */
 .line__label {
-  color: var(--chit-muted);
-  /* Labels are short and fixed ("For", "In NIM", "Goes to"). They must never wrap — the
+  color: var(--chit-secondary);
+  font-size: 0.875rem;
+  /* Labels are short and fixed ("Amount", "Due", "Paid to"). They must never wrap — the
    * value is the thing that can be long, and it is the thing that wraps. */
   flex: 0 0 auto;
   white-space: nowrap;
@@ -282,9 +430,42 @@ p  { margin: 0 0 10px; }
   flex: 1 1 auto;
   min-width: 0;
   text-align: right;
+  font-variant-numeric: tabular-nums;
   /* `anywhere` and not `break-word`: an address or a chit id has no spaces to break at. */
   overflow-wrap: anywhere;
 }
+.line__value.good { color: var(--chit-good); }
+.line__value.bad { color: var(--chit-bad); }
+.line__value.mono { font-size: 0.8125rem; color: var(--chit-secondary); }
+.line__value .mono { font-size: 0.8125rem; }
+
+/* A row whose value is a control (a link, a button) needs the full 44px. */
+.line--action { padding: 0; }
+.line--action > .line__value { display: flex; justify-content: flex-end; }
+
+/*
+ * Things a person does not need in order to decide — block heights, digests, raw ids —
+ * fold under "Details". Kept, because a receipt must stay checkable; hidden, because a
+ * block number tells a human nothing.
+ */
+.details { border-top: 1px solid var(--chit-line); }
+.details > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--chit-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.details > summary::-webkit-details-marker { display: none; }
+.details > summary .icon { transition: transform var(--t-short) var(--ease-out); }
+.details[open] > summary .icon { transform: rotate(180deg); }
+.details__body { padding-bottom: 8px; }
+.details__body .line { padding: 8px 0; }
+.details__body .line__value { font-family: var(--chit-mono); font-size: 0.8125rem; color: var(--chit-secondary); }
 
 /* ---------- controls ---------- */
 
@@ -295,16 +476,32 @@ p  { margin: 0 0 10px; }
   font: inherit;
   font-family: var(--chit-sans);
   font-size: 16px;              /* see note on html font-size */
+  line-height: 1.45;
   color: var(--chit-ink);
   background: var(--chit-surface);
   border: 1px solid var(--chit-line);
-  border-radius: var(--chit-radius);
+  border-radius: var(--r-control);
   /* Three rows is the right height for one line of a deal; a drag grip is desktop furniture. */
   resize: none;
+  transition: border-color var(--t-micro) var(--ease-out), box-shadow var(--t-micro) var(--ease-out);
 }
 /* Focus is attention, not alarm: an ink ring, never the warm-red accent that reads as an error. */
-.field:focus-visible { outline: 2px solid color-mix(in oklab, var(--chit-ink) 55%, transparent); outline-offset: 1px; }
+.field:focus-visible {
+  outline: none;
+  border-color: var(--chit-ink);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--chit-ink) 12%, transparent);
+}
 .field::placeholder { color: var(--chit-muted); }
+/* The composer's input is the product. It gets the size and the room of a headline. */
+.field--hero {
+  min-height: 128px;
+  padding: 16px 18px;
+  font-size: 1.125rem;
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+  background: var(--chit-raised);
+  box-shadow: var(--shadow-raised);
+}
 
 .btn {
   display: inline-flex;
@@ -317,61 +514,173 @@ p  { margin: 0 0 10px; }
   font: inherit;
   font-family: var(--chit-sans);
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--chit-primary-ink);
   background: var(--chit-primary);
   border: 0;
-  border-radius: var(--chit-radius);
+  border-radius: var(--r-control);
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--t-micro) var(--ease-out), background-color var(--t-micro) var(--ease-out), opacity var(--t-micro) var(--ease-out);
 }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Press feedback is the whole difference between a web page and an app under the thumb. */
+.btn:active:not(:disabled) { transform: scale(0.98); background: var(--chit-primary-press); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn:focus-visible { outline: 2px solid var(--chit-accent); outline-offset: 2px; }
+.btn .icon { flex: 0 0 auto; }
 
 .btn--quiet {
   color: var(--chit-ink);
-  background: transparent;
+  background: var(--chit-surface);
   border: 1px solid var(--chit-line);
 }
-.link, a { color: var(--chit-accent); }
-.link:hover, a:hover { color: var(--chit-accent-hover); }
+.btn--quiet:active:not(:disabled) { background: var(--chit-subtle); }
 
 .btn--plain {
   min-height: 44px;
-  color: var(--chit-muted);
+  padding: 10px 14px;
+  color: var(--chit-secondary);
   background: transparent;
   font-weight: 500;
 }
+.btn--plain:active:not(:disabled) { background: var(--chit-subtle); }
+
+/* A small inline action — "Name this wallet", "Copy". Sits in a row, not a footer. */
+.btn--inline {
+  width: auto;
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--chit-ink);
+  background: var(--chit-subtle);
+  border-radius: 999px;
+}
+.btn--inline:active:not(:disabled) { background: var(--chit-line); }
+
+/* A single glyph — the pen that names a wallet. Round, 44px, labelled for a screen reader. */
+.btn--icon {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--chit-secondary);
+  background: var(--chit-subtle);
+  border-radius: 50%;
+}
+.btn--icon:active:not(:disabled) { background: var(--chit-line); color: var(--chit-ink); }
+
+@media (hover: hover) {
+  .btn--icon:hover:not(:disabled) { background: var(--chit-line); color: var(--chit-ink); }
+  .btn:hover:not(:disabled) { background: var(--chit-primary-press); }
+  .btn--quiet:hover:not(:disabled), .btn--plain:hover:not(:disabled) { background: var(--chit-subtle); }
+  .btn--inline:hover:not(:disabled) { background: var(--chit-line); }
+}
+
+a { color: var(--chit-accent-text); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.link { color: var(--chit-accent-text); font-weight: 500; }
+/* A link that stands on its own line gets a full-height target; an inline one cannot. */
+.link-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 2px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.link-row:hover { text-decoration: underline; }
+a.btn { text-decoration: none; }
+
+/* ---------- icons ---------- */
+
+.icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon--sm { width: 16px; height: 16px; }
+.icon--lg { width: 24px; height: 24px; }
 
 /* ---------- status ---------- */
 
+/*
+ * Progress is a sentence with a dot, not a boxed alert. The dot pulses while something is
+ * being waited for and goes solid when it has happened; the box is kept for messages that
+ * need a border to be noticed (a wallet on the wrong network, a refused answer).
+ */
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  color: var(--chit-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+}
+.status__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--chit-faint);
+}
+.status--waiting .status__dot { background: var(--chit-accent); animation: pulse 1.6s var(--ease-out) infinite; }
+.status--good .status__dot { background: var(--chit-good); }
+.status--good { color: var(--chit-ink); }
+.status--warn .status__dot { background: var(--chit-warn); }
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in oklab, var(--chit-accent) 45%, transparent); }
+  70%  { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
 .note {
+  display: flex;
+  gap: 10px;
   padding: 12px 14px;
-  border-radius: var(--chit-radius);
+  border-radius: var(--r-control);
   border: 1px solid var(--chit-line);
   background: var(--chit-surface);
+  line-height: 1.45;
 }
+.note > .icon { margin-top: 3px; }
+.note__body { min-width: 0; flex: 1 1 auto; display: grid; gap: 8px; }
 /*
  * Cancelling is normal, not an error: the calm variant is the default and nothing about
  * it is red. Red is reserved for something actually being wrong.
  */
-.note--calm { border-color: var(--chit-line); }
-.note--good { border-color: color-mix(in oklab, var(--chit-good) 45%, var(--chit-line)); }
-.note--warn { border-color: color-mix(in oklab, var(--chit-warn) 45%, var(--chit-line)); }
-.note--bad  { border-color: color-mix(in oklab, var(--chit-bad) 45%, var(--chit-line)); }
+.note--calm { color: var(--chit-secondary); }
+.note--good { background: var(--chit-good-soft); border-color: color-mix(in oklab, var(--chit-good) 35%, var(--chit-line)); }
+.note--good > .icon { color: var(--chit-good); }
+.note--warn { background: var(--chit-warn-soft); border-color: color-mix(in oklab, var(--chit-warn) 35%, var(--chit-line)); }
+.note--warn > .icon { color: var(--chit-warn); }
+.note--bad  { background: var(--chit-bad-soft); border-color: color-mix(in oklab, var(--chit-bad) 35%, var(--chit-line)); }
+.note--bad > .icon { color: var(--chit-bad); }
 
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  min-height: 28px;
+  padding: 3px 10px;
   border-radius: 999px;
-  font-size: 0.82rem;
+  font-size: 0.8125rem;
   font-weight: 600;
+  letter-spacing: 0;
   border: 1px solid var(--chit-line);
-  color: var(--chit-muted);
+  color: var(--chit-secondary);
+  background: var(--chit-surface);
 }
-.badge--good { color: var(--chit-good); border-color: color-mix(in oklab, var(--chit-good) 45%, var(--chit-line)); }
-.badge--bad  { color: var(--chit-bad);  border-color: color-mix(in oklab, var(--chit-bad) 45%, var(--chit-line)); }
+.badge .icon { width: 14px; height: 14px; stroke-width: 2.2; }
+.badge--good { color: var(--chit-good); background: var(--chit-good-soft); border-color: color-mix(in oklab, var(--chit-good) 30%, var(--chit-line)); }
+.badge--warn { color: var(--chit-warn); background: var(--chit-warn-soft); border-color: color-mix(in oklab, var(--chit-warn) 30%, var(--chit-line)); }
+.badge--bad  { color: var(--chit-bad);  background: var(--chit-bad-soft);  border-color: color-mix(in oklab, var(--chit-bad) 30%, var(--chit-line)); }
 
 .chip {
   /* The currency, deadline and deliverables controls. 44px is the floor for a thumb. */
@@ -380,16 +689,21 @@ p  { margin: 0 0 10px; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  display: inline-block;
-  padding: 6px 12px;
+  padding: 8px 14px;
   margin: 0 6px 6px 0;
   border: 1px solid var(--chit-line);
   border-radius: 999px;
   background: var(--chit-surface);
-  font-size: 0.9rem;
+  color: var(--chit-ink);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: transform var(--t-micro) var(--ease-out), background-color var(--t-micro) var(--ease-out);
 }
-.chip[aria-pressed='true'] { border-color: var(--chit-accent); color: var(--chit-accent); }
+.chip:active { transform: scale(0.96); }
+/* The chosen one is unmistakable: filled ink, not a coloured outline the eye has to find. */
+.chip[aria-pressed='true'] { background: var(--chit-primary); color: var(--chit-primary-ink); border-color: var(--chit-primary); }
 
 /* ---------- boot + misc ---------- */
 
@@ -406,10 +720,13 @@ p  { margin: 0 0 10px; }
 .qr {
   display: grid;
   place-items: center;
-  padding: 18px;
+  justify-self: center;
+  padding: 16px;
   background: #fff;             /* a QR must stay high-contrast in dark mode */
-  border-radius: var(--chit-radius);
+  border: 1px solid var(--chit-line);
+  border-radius: var(--r-card);
 }
+.qr canvas { display: block; }
 
 .spin {
   width: 18px; height: 18px;
@@ -420,8 +737,24 @@ p  { margin: 0 0 10px; }
 }
 @keyframes chit-spin { to { transform: rotate(360deg); } }
 
+/*
+ * A slot that is about to fill (the payer's record, the bounty, a list) holds its shape
+ * while it loads, so nothing on the page jumps when the answer arrives.
+ */
+.skeleton {
+  border-radius: var(--r-small);
+  background: linear-gradient(90deg, var(--chit-subtle) 0%, var(--chit-surface) 50%, var(--chit-subtle) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease-out) infinite;
+}
+.skeleton--line { height: 40px; }
+.skeleton--card { height: 96px; border-radius: var(--r-card); }
+.skeleton--row { height: 64px; border-radius: var(--r-card); }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .skeleton { background: var(--chit-subtle); }
 }
 
 .sr-only {
@@ -430,35 +763,54 @@ p  { margin: 0 0 10px; }
   clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-
 /* ---------- top bar ---------- */
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 14px;
+  gap: 8px;
+  min-height: 52px;
+  margin: 0 -8px 10px;
 }
 .topbar__brand {
-  font-weight: 600;
-  font-size: 1.05rem;
-  letter-spacing: -0.02em;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 8px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: -0.03em;
   color: var(--chit-ink);
   background: none;
   border: 0;
-  padding: 8px 0;
-  min-height: 44px;
+  border-radius: var(--r-small);
   cursor: pointer;
 }
+/* The wordmark's full stop is the accent — the one place the brand shows its colour. */
+.topbar__brand::after { content: '.'; color: var(--chit-accent); }
+.topbar__nav { display: flex; gap: 2px; }
 .topbar__link {
-  color: var(--chit-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.9375rem;
   font-weight: 500;
+  color: var(--chit-secondary);
   background: none;
   border: 0;
-  padding: 8px 0 8px 12px;
-  min-height: 44px;
+  border-radius: 999px;
   cursor: pointer;
+  transition: background-color var(--t-micro) var(--ease-out), color var(--t-micro) var(--ease-out);
 }
+.topbar__link:active { background: var(--chit-subtle); color: var(--chit-ink); }
+.topbar__link .icon { width: 17px; height: 17px; }
+@media (hover: hover) { .topbar__link:hover { background: var(--chit-subtle); color: var(--chit-ink); } }
 
 /* ---------- direction control ---------- */
 
@@ -468,50 +820,64 @@ p  { margin: 0 0 10px; }
   gap: 4px;
   padding: 4px;
   background: var(--chit-subtle);
-  border-radius: var(--chit-radius);
-  margin-bottom: 12px;
+  border-radius: var(--r-control);
 }
 .seg__item {
   min-height: 44px;
   border: 0;
-  border-radius: calc(var(--chit-radius) - 4px);
+  border-radius: calc(var(--r-control) - 4px);
   background: transparent;
   color: var(--chit-secondary);
+  font: inherit;
   font-weight: 500;
   cursor: pointer;
+  transition: background-color var(--t-short) var(--ease-out), color var(--t-short) var(--ease-out), box-shadow var(--t-short) var(--ease-out);
 }
 .seg__item[aria-pressed='true'] {
-  background: var(--chit-surface);
+  background: var(--chit-raised);
   color: var(--chit-ink);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--chit-line);
 }
 
 /* ---------- the payer's record, above Sign ---------- */
 
 .strip {
-  margin: 0 0 4px;
-  padding: 10px 14px;
-  border-radius: var(--chit-radius-sm);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-control);
   background: var(--chit-subtle);
   color: var(--chit-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.4;
 }
-.strip--warn { color: var(--chit-warn); }
+.strip > .icon { margin-top: 2px; color: var(--chit-muted); }
+.strip--warn { color: var(--chit-warn); background: var(--chit-warn-soft); }
+.strip--warn > .icon { color: var(--chit-warn); }
 
 /* ---------- pills and lists ---------- */
 
 .pill {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 500;
   background: var(--chit-subtle);
   color: var(--chit-secondary);
   white-space: nowrap;
 }
-.pill--good { color: var(--chit-good); background: color-mix(in oklab, var(--chit-good) 12%, var(--chit-surface)); }
-.pill--warn { color: var(--chit-warn); background: color-mix(in oklab, var(--chit-warn) 12%, var(--chit-surface)); }
+.pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--chit-faint); }
+.pill--good { color: var(--chit-good); background: var(--chit-good-soft); }
+.pill--good::before { background: var(--chit-good); }
+.pill--warn { color: var(--chit-warn); background: var(--chit-warn-soft); }
+.pill--warn::before { background: var(--chit-warn); }
+.pill--open::before { background: var(--chit-accent); }
 
 .list { display: flex; flex-direction: column; gap: 8px; }
 .list__item {
@@ -523,56 +889,229 @@ p  { margin: 0 0 10px; }
   min-height: 64px;
   padding: 12px 16px;
   text-align: left;
+  font: inherit;
   background: var(--chit-surface);
   border: 1px solid var(--chit-line);
-  border-radius: var(--chit-radius);
+  border-radius: var(--r-card);
   color: var(--chit-ink);
   cursor: pointer;
+  transition: transform var(--t-micro) var(--ease-out), background-color var(--t-micro) var(--ease-out);
 }
-.list__main { min-width: 0; flex: 1 1 auto; }
-.list__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list__item:active { transform: scale(0.99); background: var(--chit-subtle); }
+.list__item--static { cursor: default; }
+.list__item--static:active { transform: none; background: var(--chit-surface); }
+.list__main { min-width: 0; flex: 1 1 auto; display: grid; gap: 2px; }
+.list__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.list__text--wrap { white-space: normal; overflow: visible; font-weight: 400; }
+.list__meta { color: var(--chit-muted); font-size: 0.8125rem; }
 .list__side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; }
+.list__amount { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.list__chevron { color: var(--chit-faint); }
+
+/* ---------- empty state ---------- */
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 36px 16px 28px;
+  text-align: center;
+}
+.empty__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--chit-subtle);
+  color: var(--chit-secondary);
+  margin-bottom: 4px;
+}
+.empty__title { font-weight: 600; }
+h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacing: -0.02em; }
+.empty__text { color: var(--chit-secondary); font-size: 0.9375rem; max-width: 26rem; }
+
+/* ---------- the receipt ---------- */
+
+/*
+ * The one screen that is kept, forwarded and printed. It looks like a document because it
+ * is one: a raised sheet, a check that draws itself in once, the amount, the words, and the
+ * facts a bookkeeper wants — separated by a dashed rule, the way a till receipt is.
+ */
+.receipt {
+  display: grid;
+  gap: 14px;
+  padding: 20px 20px 8px;
+  background: var(--chit-raised);
+  border: 1px solid var(--chit-line);
+  border-radius: var(--r-sheet);
+  box-shadow: var(--shadow-raised);
+}
+.receipt__head { display: flex; align-items: center; gap: 12px; }
+.receipt__check {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--chit-good-soft);
+  color: var(--chit-good);
+  flex: 0 0 auto;
+}
+.receipt__check .icon { width: 22px; height: 22px; stroke-width: 2.4; }
+.receipt__check .icon path { stroke-dasharray: 30; stroke-dashoffset: 0; animation: draw 420ms var(--ease-out) 120ms both; }
+@keyframes draw { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 0; } }
+.receipt__title { font-weight: 600; line-height: 1.2; }
+.receipt__when { color: var(--chit-secondary); font-size: 0.875rem; }
+.receipt__cut { border: 0; border-top: 1px dashed var(--chit-line-strong); margin: 2px 0; }
+.receipt .line { padding: 9px 0; }
+.receipt .line:last-child { border-bottom: 0; }
 
 /* ---------- inline help and link buttons ---------- */
 
-.help summary { cursor: pointer; color: var(--chit-accent); font-weight: 500; min-height: 44px; display: flex; align-items: center; }
-.help > p { margin-top: 8px; }
-.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.row-actions .btn { width: auto; flex: 1 1 auto; text-decoration: none; }
-a.btn { text-decoration: none; }
-
-
-/* ---------- bounty, kicker, rules ---------- */
-
-.kicker {
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--chit-accent);
-  margin: 0 0 6px;
+.help { border-top: 1px solid var(--chit-line); }
+.help > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 48px;
+  cursor: pointer;
+  color: var(--chit-ink);
+  font-weight: 500;
 }
-.card--accent { border-color: color-mix(in oklab, var(--chit-accent) 45%, var(--chit-line)); }
-.card--accent .btn { margin-top: 10px; }
-.rules { margin: 0; padding-left: 18px; color: var(--chit-secondary); }
-.rules li { margin: 4px 0; }
-.topbar__links { display: flex; gap: 4px; }
-.badge--warn { color: var(--chit-warn); border-color: color-mix(in oklab, var(--chit-warn) 45%, var(--chit-line)); }
-.list__item--static { cursor: default; }
-.list__text--wrap { white-space: normal; }
+.help > summary::-webkit-details-marker { display: none; }
+.help > summary .icon { color: var(--chit-muted); transition: transform var(--t-short) var(--ease-out); }
+.help[open] > summary .icon { transform: rotate(180deg); }
+.help__body { display: grid; gap: 8px; padding: 0 0 14px; color: var(--chit-secondary); font-size: 0.9375rem; line-height: 1.5; }
+.help__body p { margin: 0; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row-actions .btn { width: auto; flex: 1 1 auto; text-decoration: none; }
 .row-actions .badge { width: auto; }
-.line__value.good { color: var(--chit-good); }
-.line__value.bad { color: var(--chit-bad); }
+
+/* Copyable things — the share link — are shown short, with the copy beside them. */
+.copyable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 6px 6px 16px;
+  border: 1px solid var(--chit-line);
+  border-radius: var(--r-control);
+  background: var(--chit-surface);
+}
+.copyable__text { min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; color: var(--chit-secondary); }
+
+.rules { margin: 0; padding-left: 18px; color: var(--chit-secondary); }
+.rules li { margin: 6px 0; }
+
+/* ---------- people: identicon, name, address ---------- */
+
+/*
+ * The identicon every Nimiq app draws for an address. A disc until the image lands, so the
+ * layout never moves; the image is 40px of the trust block and 20px inside a row.
+ */
+.idn {
+  display: inline-grid;
+  place-items: center;
+  width: var(--idn-size, 40px);
+  height: var(--idn-size, 40px);
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--chit-subtle);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.idn img { display: block; width: 100%; height: 100%; }
+.idn--ready { background: transparent; }
+
+.party {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--chit-line);
+}
+.party:last-child { border-bottom: 0; }
+.party__text { min-width: 0; flex: 1 1 auto; display: grid; gap: 1px; }
+.party__role { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--chit-muted); }
+.party__name { font-weight: 600; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.party__addr { color: var(--chit-muted); font-size: 0.75rem; }
+.party__edit { width: 100%; padding: 8px 0; }
+.party .btn--inline { flex: 0 0 auto; }
+
+.who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; vertical-align: middle; }
+.who__text { display: inline-flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.25; }
+.line__value .who { justify-content: flex-end; }
+.line__value .who__text { align-items: flex-end; }
+.who__name { font-weight: 500; }
+.who__addr { font-family: var(--chit-mono); font-size: 0.7rem; color: var(--chit-muted); }
+.list__meta .who { gap: 6px; }
+.list__meta .who__addr { display: none; }
+
+/* ---------- the composer's editable rows ---------- */
+
+.edit__trigger {
+  width: 100%;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--chit-line);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-height: 48px;
+  border-radius: 0;
+}
+.edit:last-child .edit__trigger { border-bottom: 0; }
+.edit__trigger .line__value { display: inline-flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.edit__pen { color: var(--chit-muted); }
+.edit__panel { padding: 10px 0 12px; border-bottom: 1px solid var(--chit-line); }
+.edit:last-child .edit__panel { border-bottom: 0; }
+.edit__problem { color: var(--chit-bad); }
+.edit__problem:empty { display: none; }
+.chips { display: flex; flex-wrap: wrap; }
+
+/* ---------- side-by-side on a wide screen ---------- */
+
+/*
+ * A QR code and its explanation sit side by side when there is room, and stack on a phone.
+ * `.rail` is the only two-column layout in the app.
+ */
+.rail { display: grid; gap: 16px; align-items: center; justify-items: center; }
+.rail__text { width: 100%; }
+@media (min-width: 560px) {
+  .rail { grid-template-columns: auto 1fr; justify-items: start; }
+}
+
+.slot:empty { display: none; }
+.foot { display: flex; justify-content: center; padding-top: 8px; }
+.foot__link { background: none; border: 0; font: inherit; color: var(--chit-secondary); cursor: pointer; }
+.problem__actions { width: 100%; max-width: 20rem; margin-top: 8px; }
+.signed { white-space: pre-wrap; overflow-x: auto; padding: 12px 14px; margin: 0; }
+
+/* ---------- desktop ---------- */
+
+/* A phone-shaped column on a wide screen; the page around it stays paper, not a mockup. */
+@media (min-width: 720px) {
+  .screen { padding-top: 40px; padding-bottom: 40px; }
+  .screen__actions { border-radius: 0 0 var(--r-sheet) var(--r-sheet); }
+}
 
 /* ---------- print: the receipt as a document ---------- */
 
 @media print {
-  html, body { background: #fff; }
-  .topbar, .screen__actions, .help summary, .qr, .btn { display: none !important; }
-  .help { border: 0; }
-  .help > * { display: block; }
+  html, body { background: #fff; color: #000; }
+  .topbar, .screen__actions, .screen__sentinel, .help, .qr, .btn, .status, .copyable { display: none !important; }
+  .details { display: block; }
+  .details > summary { display: none; }
+  .details__body { display: block; }
   .screen { max-width: none; padding: 0; min-height: 0; }
-  .card, .card--flat { break-inside: avoid; border-color: #bbb; }
-  .badge { border-color: #bbb; }
+  .screen--enter { animation: none; }
+  .card, .card--flat, .receipt { break-inside: avoid; border-color: #bbb; box-shadow: none; background: #fff; }
+  .badge, .pill { border-color: #bbb; background: #fff; }
+  .receipt__check .icon path { animation: none; }
   a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #555; }
 }

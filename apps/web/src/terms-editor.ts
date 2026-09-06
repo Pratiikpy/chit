@@ -13,17 +13,18 @@
 
 import { formatMinor, minorUnitsPer, parseMoneyToMinor } from '@chit/core';
 import type { DraftFields } from './compose.ts';
-import { el, row } from './ui.ts';
+import { el, icon } from './ui.ts';
+import { t } from './i18n.ts';
 
 /** Currencies offered when the parser had no opinion. Nimiq Pay's own four lead. */
 const COMMON_CURRENCIES = ['USD', 'EUR', 'CRC', 'GMD', 'GBP', 'INR', 'NGN', 'BRL', 'PHP', 'PKR'];
 
-const DEADLINE_CHOICES: Array<{ label: string; days: number }> = [
-  { label: 'today', days: 0 },
-  { label: 'tomorrow', days: 1 },
-  { label: '3 days', days: 3 },
-  { label: 'a week', days: 7 },
-  { label: '2 weeks', days: 14 },
+const DEADLINE_CHOICES: Array<{ label: () => string; days: number }> = [
+  { label: () => t('today'), days: 0 },
+  { label: () => t('tomorrow'), days: 1 },
+  { label: () => t('3 days'), days: 3 },
+  { label: () => t('a week'), days: 7 },
+  { label: () => t('2 weeks'), days: 14 },
 ];
 
 export interface EditorOptions {
@@ -43,39 +44,36 @@ function chip(label: string, pressed: boolean, onPick: () => void): HTMLButtonEl
   });
 }
 
+/** Days from now, the way a person says it. */
+export function deadlineLabel(days: number): string {
+  if (days === 0) return t('today');
+  if (days === 1) return t('tomorrow');
+  return t('{n} days', { n: days });
+}
+
 /**
  * A row whose value can be corrected in place.
  *
- * Collapsed it reads as a plain fact. Tapped, it expands into exactly the control that
- * value needs — and nothing else appears on screen.
+ * Collapsed it reads as a plain fact with a pen beside it. Tapped, it expands into exactly
+ * the control that value needs — and nothing else appears on screen.
  */
 function editableRow(
   label: string,
   display: string,
   buildEditor: (close: () => void) => HTMLElement,
 ): HTMLElement {
-  const container = el('div');
+  const container = el('div', { class: 'edit' });
   let open = false;
 
   const render = (): void => {
     container.replaceChildren();
     if (!open) {
       const trigger = el('button', {
-        class: 'line',
-        attrs: {
-          type: 'button',
-          style: 'width:100%;background:none;border:0;border-bottom:1px solid var(--chit-line);font:inherit;color:inherit;text-align:left;cursor:pointer;padding:9px 0',
-          'aria-label': `${label}: ${display}. Tap to change.`,
-        },
+        class: 'line edit__trigger',
+        attrs: { type: 'button', 'aria-label': t('{label}: {value}. Tap to change.', { label, value: display }) },
         children: [
           el('span', { class: 'line__label', text: label }),
-          el('span', {
-            class: 'line__value',
-            children: [
-              el('span', { text: display }),
-              el('span', { class: 'muted small', text: '  change' }),
-            ],
-          }),
+          el('span', { class: 'line__value', children: [el('span', { text: display }), icon('pen', 'icon--sm edit__pen')] }),
         ],
         on: {
           click: () => {
@@ -90,15 +88,11 @@ function editableRow(
 
     container.append(
       el('div', {
-        class: 'stack stack--tight',
-        attrs: { style: 'padding:10px 0;border-bottom:1px solid var(--chit-line)' },
-        children: [
-          el('span', { class: 'line__label small', text: label }),
-          buildEditor(() => {
-            open = false;
-            render();
-          }),
-        ],
+        class: 'stack stack--tight edit__panel',
+        children: [el('span', { class: 'line__label', text: label }), buildEditor(() => {
+          open = false;
+          render();
+        })],
       }),
     );
   };
@@ -112,10 +106,8 @@ export function termsEditor(options: EditorOptions): HTMLElement {
   const { fields, onChange } = options;
 
   const amountRow = editableRow(
-    'Amount',
-    fields.amountMinor !== null && fields.currency
-      ? formatMinor(fields.amountMinor, fields.currency)
-      : 'not sure yet',
+    t('Amount'),
+    fields.amountMinor !== null && fields.currency ? formatMinor(fields.amountMinor, fields.currency) : t('not sure yet'),
     (close) => {
       const input = el('input', {
         class: 'field',
@@ -125,23 +117,20 @@ export function termsEditor(options: EditorOptions): HTMLElement {
           // separator on some Android keyboards and silently drops what the user typed.
           inputmode: 'decimal',
           autocomplete: 'off',
-          'aria-label': 'Amount',
-          value:
-            fields.amountMinor !== null && fields.currency
-              ? formatMinor(fields.amountMinor, fields.currency)
-              : '',
+          'aria-label': t('Amount'),
+          value: fields.amountMinor !== null && fields.currency ? formatMinor(fields.amountMinor, fields.currency) : '',
         },
       });
 
-      const problem = el('div', { class: 'small', attrs: { style: 'color:var(--chit-bad)' } });
+      const problem = el('div', { class: 'small edit__problem', attrs: { role: 'alert' } });
 
       const apply = (): void => {
         const parsed = parseMoneyToMinor(input.value.trim(), fields.currency ?? 'USD');
         if (parsed === null || parsed <= 0n) {
           problem.textContent =
             minorUnitsPer(fields.currency ?? 'USD') === 1n
-              ? 'A whole number, please — this currency has no decimals.'
-              : 'That is not an amount chit can read. Try 40 or 40.50.';
+              ? t('A whole number, please — this currency has no decimals.')
+              : t('That is not an amount chit can read. Try 40 or 40.50.');
           return;
         }
         fields.amountMinor = parsed;
@@ -161,25 +150,20 @@ export function termsEditor(options: EditorOptions): HTMLElement {
       queueMicrotask(() => input.focus());
       return el('div', {
         class: 'stack stack--tight',
-        children: [
-          input,
-          problem,
-          el('button', { class: 'btn', text: 'Set it', attrs: { type: 'button' }, on: { click: apply } }),
-        ],
+        children: [input, problem, el('button', { class: 'btn', text: t('Set it'), attrs: { type: 'button' }, on: { click: apply } })],
       });
     },
   );
 
-  const currencyRow = editableRow('Currency', fields.currency ?? 'not sure yet', (close) => {
+  const currencyRow = editableRow(t('Currency'), fields.currency ?? t('not sure yet'), (close) => {
     // The parser's own alternatives come first — it already knows which currencies share
     // the symbol it saw, so those are the corrections actually likely to be wanted.
-    const offered = [
-      ...(fields.currency ? [fields.currency] : []),
-      ...options.currencyAlternatives,
-      ...COMMON_CURRENCIES,
-    ].filter((code, index, all) => all.indexOf(code) === index);
+    const offered = [...(fields.currency ? [fields.currency] : []), ...options.currencyAlternatives, ...COMMON_CURRENCIES].filter(
+      (code, index, all) => all.indexOf(code) === index,
+    );
 
     return el('div', {
+      class: 'chips',
       children: offered.map((code) =>
         chip(code, code === fields.currency, () => {
           fields.currency = code;
@@ -191,26 +175,23 @@ export function termsEditor(options: EditorOptions): HTMLElement {
     });
   });
 
-  const deadlineRow = editableRow(
-    'By',
-    fields.deadlineDays === 0
-      ? 'today'
-      : `${fields.deadlineDays} day${fields.deadlineDays === 1 ? '' : 's'}`,
-    (close) =>
-      el('div', {
-        children: DEADLINE_CHOICES.map((choice) =>
-          chip(choice.label, choice.days === fields.deadlineDays, () => {
-            fields.deadlineDays = choice.days;
-            fields.edited.add('deadline');
-            close();
-            onChange();
-          }),
-        ),
-      }),
+  const deadlineRow = editableRow(t('By'), deadlineLabel(fields.deadlineDays), (close) =>
+    el('div', {
+      class: 'chips',
+      children: DEADLINE_CHOICES.map((choice) =>
+        chip(choice.label(), choice.days === fields.deadlineDays, () => {
+          fields.deadlineDays = choice.days;
+          fields.edited.add('deadline');
+          close();
+          onChange();
+        }),
+      ),
+    }),
   );
 
-  const deliverablesRow = editableRow('How many', String(fields.deliverables), (close) =>
+  const deliverablesRow = editableRow(t('How many'), String(fields.deliverables), (close) =>
     el('div', {
+      class: 'chips',
       children: [1, 2, 3, 4, 5, 10].map((count) =>
         chip(String(count), count === fields.deliverables, () => {
           fields.deliverables = count;
@@ -222,13 +203,13 @@ export function termsEditor(options: EditorOptions): HTMLElement {
     }),
   );
 
-  return el('div', {
-    class: 'card',
-    children: [amountRow, currencyRow, deadlineRow, deliverablesRow],
-  });
+  return el('div', { class: 'card', children: [amountRow, currencyRow, deadlineRow, deliverablesRow] });
 }
 
 /** A read-only NIM line — the settlement figure, never editable because we quote it. */
 export function nimRow(nimText: string): HTMLElement {
-  return row('In NIM', nimText, 'mono');
+  return el('div', {
+    class: 'line',
+    children: [el('span', { class: 'line__label', text: t('In NIM') }), el('span', { class: 'line__value num', text: nimText })],
+  });
 }

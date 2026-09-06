@@ -159,7 +159,8 @@ try {
   await payer.page.goto(chitUrl, { waitUntil: 'networkidle', timeout: 60_000 });
   await payer.page.waitForSelector('text=Time to pay', { timeout: 60_000 });
   await shot(payer.page, '06-pay');
-  check('the payer is asked to pay the amount agreed', /Pay 45\.00/.test(await payer.page.locator('body').innerText()));
+  // The button names the agreed fiat figure in the viewer's own notation and says it is paid in NIM.
+  check('the payer is asked to pay the amount agreed, in NIM', /Pay .*45[.,]00.* in NIM/.test(await payer.page.locator('body').innerText()));
 
   /* -------------------------------------------------- 5. a stranger */
   console.log('\n5. Someone with no wallet at all');

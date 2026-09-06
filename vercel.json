@@ -13,7 +13,7 @@
       "destination": "/api"
     },
     {
-      "source": "/((?!api|health|assets|favicon|site).*)",
+      "source": "/((?!api|health|assets|favicon|site|og\\.png|icon-|apple-touch-icon).*)",
       "destination": "/index.html"
     }
   ]

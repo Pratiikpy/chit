@@ -174,14 +174,28 @@ export class BountyService {
     return this.#repo.forAddress(this.#address, 500);
   }
 
+  /** The chain height, or null when the node cannot be reached — never a guess. */
+  async #currentHeight(): Promise<number | null> {
+    try {
+      return await this.#rpc.getBlockNumber();
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Make sure enough bounties are open. Called on read, so there is no cron to fail: the
    * first person to look is the one who tops the list up, and an instance that is asleep
    * costs nobody anything.
    */
   async ensureOpen(): Promise<StoredChit[]> {
-    const all = await this.#mine();
-    const open = all.filter((c) => this.isBounty(c) && !c.payeeSignature && !c.settledTx);
+    const [all, height] = await Promise.all([this.#mine(), this.#currentHeight()]);
+    // A bounty past its deadline is not on offer. It stays in the record, is never listed or
+    // claimable, and a fresh one is posted in its place — otherwise a stale week-old chit
+    // would sit at the top of the home screen reading "Open".
+    const open = all.filter(
+      (c) => this.isBounty(c) && !c.payeeSignature && !c.settledTx && !c.declinedAt && (height === null || c.chit.deadlineBlock > height),
+    );
     const missing = this.#openSlots - open.length;
     for (let i = 0; i < missing; i++) {
       const created = await this.#post();
@@ -240,6 +254,10 @@ export class BountyService {
     const { stored, workerAddress, deviceHash } = input;
     if (!this.isBounty(stored)) return { ok: false, code: 'not-a-bounty', error: 'This chit is not a bounty.', status: 400 };
     if (stored.payeeSignature) return { ok: false, code: 'taken', error: 'Someone got to this one first. Another opens right away.', status: 409 };
+    const height = await this.#currentHeight();
+    if (height !== null && stored.chit.deadlineBlock <= height) {
+      return { ok: false, code: 'expired', error: 'This bounty has passed its deadline. Take a fresh one from the home screen.', status: 410 };
+    }
     if (!deviceHash || !/^[0-9a-f]{64}$/i.test(deviceHash)) {
       return { ok: false, code: 'no-device', error: 'Nimiq Pay did not share a device identifier; the bounty needs one to stay fair.', status: 400 };
     }

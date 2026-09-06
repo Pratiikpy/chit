@@ -11,9 +11,8 @@
  */
 
 import './styles.css';
-import { activityScreen, bountyBoardScreen, chitScreen, composeScreen, notFoundScreen, verifyScreen } from './screens.ts';
+import { aboutScreen, activityScreen, bountyBoardScreen, brokenScreen, chitScreen, composeScreen, notFoundScreen, verifyScreen } from './screens.ts';
 import { initLanguage } from './i18n.ts';
-import { button, mount, note, screen } from './ui.ts';
 
 // The host's language, read once before the first screen is built.
 initLanguage(new URLSearchParams(window.location.search).get('lang') ?? undefined);
@@ -24,7 +23,7 @@ if (typeof window !== 'undefined' && (window as { nimiqPay?: unknown }).nimiqPay
 }
 
 function navigate(path: string): void {
-  if (path !== window.location.pathname + window.location.search) {
+  if (path !== window.location.pathname + window.location.search + window.location.hash) {
     window.history.pushState({}, '', path);
   }
   void route();
@@ -34,16 +33,7 @@ function fatal(error: unknown): void {
   // Shown instead of a blank page. Deliberately plain: the user cannot fix a bug, so the
   // only useful thing is to say what happened and give them a way back.
   console.error('[chit]', error);
-  mount(
-    screen({
-      title: 'Something broke',
-      body: [
-        note('chit hit an error it did not expect. Anything already signed is safe on the server, and anything paid is on chain.', 'bad'),
-        error instanceof Error ? note(error.message, 'calm') : null,
-      ],
-      actions: [button('Start again', () => navigate('/'))],
-    }),
-  );
+  brokenScreen(navigate, error instanceof Error ? error.message : null);
 }
 
 async function route(): Promise<void> {
@@ -60,6 +50,7 @@ async function route(): Promise<void> {
     if (verifyMatch?.[1]) return await verifyScreen(decodeURIComponent(verifyMatch[1]), navigate);
 
     if (path === '/bounty') return await bountyBoardScreen(navigate);
+    if (path === '/about') return aboutScreen(navigate);
 
     if (path === '/' || path === '') return await composeScreen(navigate);
 

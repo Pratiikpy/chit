@@ -24,13 +24,32 @@
       rel="stylesheet"
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="chit" />
     <title>chit</title>
     <meta
       name="description"
-      content="Paste the deal you already agreed. Both sign it. The payment carries the proof."
+      content="Paste the deal you already agreed. Both sign it with Nimiq Pay. The payment carries the proof, and anyone can check the receipt against the chain."
     />
+    <!--
+      A chit link is pasted into chats. The preview card is the first thing the other party
+      sees, so it says what the link is rather than showing a bare URL.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="chit" />
+    <meta property="og:title" content="chit — paste the deal, get a receipt" />
+    <meta
+      property="og:description"
+      content="One line you already agreed, signed by both wallets. The NIM payment carries the proof. No account, nothing held."
+    />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="chit — paste the deal, get a receipt" />
+    <meta name="twitter:description" content="One line you already agreed, signed by both wallets. The NIM payment carries the proof." />
+    <meta name="twitter:image" content="/og.png" />
   </head>
   <body>
     <!--

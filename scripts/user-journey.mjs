@@ -207,7 +207,8 @@ try {
    * So width is asserted at each step, not eyeballed at the end.
    */
   const shot = async (page, file) => {
-    await page.screenshot({ path: `${SHOTS}/${file}.png`, fullPage: true });
+    // Entrance animations are finished before the frame is taken, so a shot is never mid-fade.
+    await page.screenshot({ path: `${SHOTS}/${file}.png`, fullPage: true, animations: 'disabled' });
     const overflow = await page.evaluate(() => {
       // `overflow-x: hidden` on the root clips the *scrollbar*, not the layout: a page can
       // still be laid out wider than the viewport and be cut off at the edge. So the widest
@@ -540,7 +541,7 @@ try {
   const home = await tester.page.locator('body').innerText();
   check('the first screen says what chit is in plain words', /Paste the deal\. Get a receipt\./.test(home));
   check('it says who it is for and what it is not', /clients you already talk to directly/.test(home) && /not protection/.test(home));
-  check('the bounty is the first card, paid by chit', /Bounty · paid by chit/i.test(home));
+  check('the bounty card is on the home screen, paid by chit', /paid by chit/i.test(home));
 
   await tester.page.locator('.card--accent button').click();
   await tester.page.waitForSelector('text=Sign and get paid', { timeout: 20_000 });
@@ -585,7 +586,8 @@ try {
   await tester.page.goto(`${WEB}/bounty`, { waitUntil: 'networkidle' });
   await tester.page.waitForSelector('text=Every payout', { timeout: 20_000 });
   await shot(tester.page, '26-bounty-board');
-  check('the public board shows the pool address, balance and the payout', /Pool/.test(await tester.page.locator('body').innerText()));
+  const board = await tester.page.locator('body').innerText();
+  check('the public board shows the pool address, balance and the payout', /pool/i.test(board) && /Balance/.test(board) && /Every payout/.test(board) && board.replace(/\s/g, '').includes(second.address.replace(/\s/g, '')));
 
   // Same wallet, second bounty today: refused by the limit, not by a person.
   const openNow = second.open[0];
@@ -653,13 +655,20 @@ try {
   await shot(dPayer.page, '30-german');
   check('the first screen is in German when the host says so', /Deal einfügen\. Beleg bekommen\./.test(await dPayer.page.locator('body').innerText()));
 
+  // The About screen: what chit is and is not, reachable from the home screen and every receipt.
+  await dPayer.page.goto(`${WEB}/about`, { waitUntil: 'networkidle' });
+  await dPayer.page.waitForSelector('h1', { timeout: 15_000 });
+  await shot(dPayer.page, '32-about');
+  const about = await dPayer.page.locator('body').innerText();
+  check('the About screen says what chit never does, in plain words', /never does|nie tut/i.test(about) && /MIT/.test(about));
+
   const settledForReceipt = await (await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}`)).json();
   const carried = Buffer.from(settledForReceipt.canonical, 'utf8').toString('base64url');
   await plainPage.goto(`${WEB}/v/${encodeURIComponent(settledForReceipt.settledTx)}#c=${carried}`, { waitUntil: 'networkidle', timeout: 60_000 });
   await plainPage.waitForSelector('text=This is genuine', { timeout: 30_000 });
   await plainPage.screenshot({ path: `${SHOTS}/31-receipt-selfcheck.png`, fullPage: true });
   const receiptView = await plainPage.locator('body').innerText();
-  check('a receipt link carrying the words shows the browser-side check card', /checked in your browser/i.test(receiptView));
+  check('a receipt link carrying the words shows the browser-side check card', /your browser’s own check|checked in your browser/i.test(receiptView));
   check('and says which check came from where', /checked by chit’s server/.test(receiptView));
 
   /* -------------------------------------------------- 9. hygiene */

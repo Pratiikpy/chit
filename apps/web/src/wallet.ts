@@ -110,10 +110,16 @@ export async function detectWallet(): Promise<WalletDetection> {
   return { tier: 'none', reason: 'Open this in Nimiq Pay to sign and pay.' };
 }
 
-/** Who this device connected as last time, if anyone. Never a dialog. */
+/**
+ * Who this device connected as last time, if anyone. Never a dialog.
+ *
+ * Kept in localStorage, not the session: three screens promise "it is in your Activity",
+ * and a promise that expires when the WebView is closed is a broken one. An address is
+ * public information; nothing here can sign or spend.
+ */
 export function rememberedAddress(): string | null {
   try {
-    return sessionStorage.getItem(ADDRESS_KEY);
+    return localStorage.getItem(ADDRESS_KEY) ?? sessionStorage.getItem(ADDRESS_KEY);
   } catch {
     return null;
   }
@@ -141,7 +147,7 @@ export async function connectWallet(): Promise<WalletSession> {
   }
 
   try {
-    sessionStorage.setItem(ADDRESS_KEY, session.address);
+    localStorage.setItem(ADDRESS_KEY, session.address);
   } catch {
     /* storage blocked — the next visit will simply ask again */
   }

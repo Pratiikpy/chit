@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@chit/core": "*",
+    "@nimiq/identicons": "^1.6.2",
     "@nimiq/mini-app-sdk": "^0.1.0",
     "nimiq-css": "^1.0.0-beta.162",
     "qr-creator": "^1.0.0"
