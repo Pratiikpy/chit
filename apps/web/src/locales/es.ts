@@ -56,6 +56,8 @@ const es: Dict = {
   'Pricing it in NIM…': 'Calculando en NIM…',
   'The words read as {a}, but the amount is set in {b}. Both sides sign the words — make sure they agree.':
     'El texto dice {a}, pero el importe está en {b}. Ambas partes firman el texto: asegúrate de que coincidan.',
+  'The words say {a}, but the amount is set to {b}. Both sides sign the words — fix the sentence, or the number.':
+    'El texto dice {a}, pero el importe está en {b}. Ambas partes firman el texto: corrige la frase o la cifra.',
   'Waiting for your wallet…': 'Esperando a tu billetera…',
   'chit is not reachable': 'No se puede conectar con chit',
   'In reply to': 'En respuesta a',
@@ -64,7 +66,7 @@ const es: Dict = {
   'Ask for a change': 'Proponer un cambio',
   'Ask for half up front': 'Pedir la mitad por adelantado',
   'Half up front — {line}': 'Mitad por adelantado — {line}',
-  'On delivery — {line}': 'Contra entrega — {line}',
+  'Second half — {line}': 'Segunda mitad — {line}',
   'The other half': 'La otra mitad',
   'Next step of this job': 'Siguiente paso de este trabajo',
   'How chit works': 'Cómo funciona chit',

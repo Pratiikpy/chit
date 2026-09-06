@@ -15,7 +15,7 @@ import type { StoredChit } from '../src/repository.ts';
 const WORKER = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000';
 const CLIENT = 'NQ11 1111 1111 1111 1111 1111 1111 1111 1111';
 
-function chit(overrides: Partial<StoredChit> & { chit?: Partial<StoredChit['chit']> } = {}): StoredChit {
+function chit(overrides: Omit<Partial<StoredChit>, 'chit'> & { chit?: Partial<StoredChit['chit']> } = {}): StoredChit {
   const { chit: chitOverrides, ...rest } = overrides;
   return {
     id: 'chit1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',

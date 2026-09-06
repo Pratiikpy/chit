@@ -866,6 +866,30 @@ try {
   const depositBody = await cPayer.page.locator('body').innerText();
   check('half up front halves the amount', /40\.00/.test(depositBody));
   check('and says so in the words both sides sign', /Half up front/.test(await cPayer.page.locator('textarea').inputValue()));
+  // The one sentence where the number being half of the words is the point, so the
+  // words-versus-number warning must stay quiet here or it is noise on the happy path.
+  check('and the deposit chit is not warned about for saying "half"', !/The words say/.test(depositBody));
+
+  /*
+   * The mirror of that: a number edited away from the sentence.
+   *
+   * Both wallets sign the words and only the number gets paid, so a sentence that says one
+   * figure while the payment carries another is the single most expensive mistake this
+   * product can let through — and a payment cannot be reversed. It warns, it never blocks.
+   */
+  await cPayer.page.goto(WEB, { waitUntil: 'networkidle' });
+  await cPayer.page.locator('button', { hasText: 'paying' }).click();
+  await cPayer.page.locator('textarea').fill('$90 to retouch twelve product photos by Friday');
+  await cPayer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+  check('a sentence and its number agreeing says nothing', !/The words say/.test(await cPayer.page.locator('body').innerText()));
+  await cPayer.page.locator('.card:not(.card--accent) button', { hasText: '90.00' }).first().click();
+  await cPayer.page.locator('input.field').fill('9');
+  await cPayer.page.locator('button', { hasText: 'Set it' }).click();
+  await cPayer.page.waitForFunction(() => document.body.innerText.includes('The words say'), { timeout: 15_000 });
+  await shot(cPayer.page, '48-amount-disagrees');
+  const disagree = await cPayer.page.locator('body').innerText();
+  check('a number edited away from the words is called out before signing', /The words say .*90\.00.*amount is set to .*9\.00/s.test(disagree));
+  check('and it warns rather than blocks — the sentence may be the wrong half', !(await cPayer.page.locator('button', { hasText: 'Sign it' }).first().isDisabled()));
 
   /* -------------------------------------------------- German + the self-checking receipt */
   console.log('\n8f. German, and a receipt link that carries the signed words');

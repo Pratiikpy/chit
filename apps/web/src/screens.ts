@@ -143,6 +143,33 @@ function displayLink(url: string): string {
   }
 }
 
+/**
+ * Is this the deposit half of a job, or the half that follows it?
+ *
+ * It matters twice: the "half up front" chip must not offer itself on a chit that already
+ * is one, and the composer's "the words say one number, the amount says another" warning
+ * must not fire on the one case where that is exactly what was meant. "Half up front — $80
+ * to build a one-page site" charging $40 is not a mistake; it is the sentence working.
+ *
+ * The markers are derived from the templates rather than listed, so a translation cannot
+ * silently stop matching — which is what a hardcoded `/^(Half up front|Anzahlung)/` did,
+ * since the German copy says "Hälfte im Voraus" and never said "Anzahlung" at all. English
+ * is always included as well, because a chit written in one language is regularly read in
+ * another.
+ */
+function isHalfChit(text: string): boolean {
+  const markers = [
+    t('Half up front — {line}'),
+    t('Second half — {line}'),
+    'Half up front — {line}',
+    'Second half — {line}',
+  ]
+    .map((template) => template.split(' — ')[0]?.trim() ?? '')
+    .filter((marker) => marker.length > 0);
+  const start = text.trimStart().toLowerCase();
+  return markers.some((marker) => start.startsWith(marker.toLowerCase()));
+}
+
 function chitPath(id: string): string {
   return `/c/${encodeURIComponent(id)}`;
 }
@@ -610,6 +637,8 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
   const parentSlot = el('div', { class: 'slot' });
   let fields: DraftFields | null = null;
   let parserCurrency: string | null = null;
+  // What the parser read out of the words, kept so an edited number can be compared with it.
+  let parserAmountMinor: bigint | null = null;
   let quote: Quote | null = null;
   let currencyAlternatives: string[] = [];
   let feedback: HTMLElement | null = null;
@@ -676,7 +705,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
     const card = termsEditor({ fields, currencyAlternatives, onChange: () => void reprice() });
     if (quote) card.append(nimRow(nim(quote.luna)));
     understood.append(el('h2', { text: t('What we understood') }), card);
-    if (fields.amountMinor !== null && fields.amountMinor > 1n && !/^(Half up front|Anzahlung)/i.test(fields.text)) {
+    if (fields.amountMinor !== null && fields.amountMinor > 1n && !isHalfChit(fields.text)) {
       const half = button(
         t('Ask for half up front'),
         () => {
@@ -705,6 +734,35 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
     if (fields.currency && parserCurrency && fields.edited.has('currency') && parserCurrency !== fields.currency) {
       understood.append(note(t('The words read as {a}, but the amount is set in {b}. Both sides sign the words — make sure they agree.', { a: parserCurrency, b: fields.currency }), 'warn'));
     }
+    /*
+     * The same trap, one field over, and the more expensive one.
+     *
+     * The words are what both wallets sign; the number is only what gets paid. Edit the
+     * number and leave the sentence saying something else and the two sides have signed a
+     * line that disagrees with the payment — which is the one situation this whole product
+     * exists to prevent. A payment cannot be reversed, so this is said before signing rather
+     * than explained afterwards. It warns and never blocks: the sentence may well be right
+     * and the parser wrong, which is why the number is editable in the first place.
+     */
+    if (
+      fields.amountMinor !== null &&
+      parserAmountMinor !== null &&
+      fields.currency &&
+      fields.edited.has('amount') &&
+      parserAmountMinor !== fields.amountMinor &&
+      // The one sentence where a number smaller than the one in the words is the point.
+      !isHalfChit(fields.text)
+    ) {
+      understood.append(
+        note(
+          t('The words say {a}, but the amount is set to {b}. Both sides sign the words — fix the sentence, or the number.', {
+            a: moneyLocal(parserAmountMinor.toString(10), fields.currency),
+            b: moneyLocal(fields.amountMinor.toString(10), fields.currency),
+          }),
+          'warn',
+        ),
+      );
+    }
     if (feedback) understood.append(feedback);
     signButton.disabled = !isReady(fields) || quote === null || detection.tier === 'none';
   }
@@ -723,6 +781,7 @@ export async function composeScreen(navigate: Navigate): Promise<void> {
     const previous = fields;
     fields = fieldsFromTerms(parsed);
     parserCurrency = fields.currency;
+    parserAmountMinor = fields.amountMinor;
     currencyAlternatives = parsed.currency?.alternatives ?? [];
     if (previous) {
       for (const field of previous.edited) {
@@ -1873,14 +1932,16 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
    * number; anything else gets the next step of the same job. Both are ordinary chits with a
    * parent, so the record reads as a series and nothing new had to be signed into the format.
    */
-  const wasDeposit = /^(Half up front|Anzahlung)/i.test(chit.chit.text);
-  const rest = wasDeposit ? chit.chit.text.replace(/^(Half up front|Anzahlung)\s*[—–-]\s*/i, '') : chit.chit.text;
+  const wasDeposit = isHalfChit(chit.chit.text);
+  const rest = wasDeposit ? chit.chit.text.replace(/^[^—–-]*[—–-]\s*/, '') : chit.chit.text;
   const nextStep = button(
     wasDeposit ? t('The other half') : t('Next step of this job'),
     () =>
       navigate(
         `/?dir=${dir}&parent=${encodeURIComponent(chit.id)}&amountMinor=${chit.chit.amountMinor}&text=${encodeURIComponent(
-          wasDeposit ? t('On delivery — {line}', { line: rest }) : rest,
+          // "Second half", not "On delivery": the sentence still carries the whole job's
+          // number, so it has to say out loud that this pays half of it.
+          wasDeposit ? t('Second half — {line}', { line: rest }) : rest,
         )}`,
       ),
     'quiet',
