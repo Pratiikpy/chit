@@ -343,6 +343,38 @@ Measured against the real service, not assumed.
 
 ---
 
+## The one thing this audience asks for that is not here
+
+The two largest design threads in the review corpus — 151 and 120 comments — are the same
+complaint: *the client wants to see the work before paying, and once they have seen it the
+urgency disappears.* The top answers in both, at +529 and +467, are also the same:
+
+> "upon receipt of payment, the watermark will be removed" · "hold them until they pay"
+
+chit does not do that, and it is the most-wanted thing in the whole sample. It is named here
+rather than left to be found, because the reasoning is a decision and not an oversight.
+
+It needs **storage and a key, not custody** — encrypt on the phone, upload only ciphertext,
+release the key when settlement is observed. That is a much lower bar than escrow, and the
+design already exists in `PRODUCT_SPEC.md` §3a and §6. The honest cost is that chit would
+hold a key, which would have to be said plainly and could never be called trustless. It is a
+new surface in a cycle that scores complexity down, so it is the first thing after this one
+rather than a rushed part of it.
+
+**What is refused permanently, and why** — a gap a judge finds unspoken is a miss; the same
+gap named is a decision:
+
+| | |
+|---|---|
+| Escrow, disputes, refunds | All need custody or something on chain to enforce against. The honest substitutes are the payer's record, smaller increments, and saying *final* above every Pay button. |
+| Push reminders | The platform has none. Activity leads with who owes you instead, and never promises a notification. |
+| KYC, or any account | The loudest complaint in the corpus is being locked out. There is deliberately nothing to be locked out of. |
+| File storage | Links only. Storage is a different product with a different liability — which is exactly what the sealed master above would change. |
+| Pay-to-apply, bidding credits | Refused permanently. It is the mechanic this audience hates most. |
+| A job board | Distribution cannot be beaten inside one cycle. chit is for the client you already have. |
+
+---
+
 ## What is not proven
 
 Honest limits. Everything here needs a physical device or funds.
