@@ -1682,6 +1682,68 @@ function statusOf(chit: ApiChit): { label: string; cls: string } {
   return { label: t('Waiting for signature'), cls: 'pill' };
 }
 
+/** How long ago, in the words a person uses about a debt. */
+function ageOf(createdAt: number): string {
+  const days = Math.floor((Date.now() - createdAt) / 86_400_000);
+  if (days <= 0) return t('today');
+  if (days === 1) return t('since yesterday');
+  return t('for {n} days', { n: days });
+}
+
+/**
+ * One unpaid chit, with a nudge.
+ *
+ * There are no reminders on this platform and there never will be, so the only thing that
+ * can chase a client is the person owed. This makes that one tap: the same link, with a line
+ * already written, handed to whichever share sheet the phone has.
+ */
+function owedRow(chit: ApiChit, me: string | null, navigate: Navigate): HTMLElement {
+  const other = chit.chit.kind === 'quote' ? null : chit.chit.payer;
+  const message = t('Still open: “{line}” — {amount}. Here is the chit: {link}', {
+    line: chit.chit.text,
+    amount: fiat(chit),
+    link: chit.shareUrl,
+  });
+  // Icon only: the row's job is to show the debt, and a labelled button ate a third of the
+  // width and truncated the deal to four words.
+  const nudge = el('button', {
+    class: 'btn btn--inline owed__nudge',
+    attrs: { type: 'button', 'aria-label': t('Nudge'), title: t('Nudge') },
+    children: [icon('share')],
+  });
+  nudge.addEventListener('click', () => {
+    if (typeof navigator.share === 'function') {
+      void navigator.share({ title: t('A chit to sign'), text: message }).catch(() => {
+        /* the sheet was dismissed — nothing to say */
+      });
+      return;
+    }
+    void navigator.clipboard.writeText(message).then(() => {
+      nudge.replaceChildren(icon('check'));
+      setTimeout(() => nudge.replaceChildren(icon('share')), 1600);
+    });
+  });
+  const open = el('button', {
+    class: 'list__item owed',
+    attrs: { type: 'button' },
+    children: [
+      el('div', {
+        class: 'list__main',
+        children: [
+          el('div', { class: 'list__text', text: chit.chit.text }),
+          el('div', { class: 'list__meta', children: other ? [who(other, me)] : [] }),
+        ],
+      }),
+      el('div', {
+        class: 'list__side',
+        children: [el('div', { class: 'list__amount', text: fiat(chit) }), el('span', { class: 'pill pill--warn', text: ageOf(chit.createdAt) })],
+      }),
+    ],
+  });
+  open.addEventListener('click', () => navigate(chitPath(chit.id)));
+  return el('div', { class: 'owed__wrap', children: [open, nudge] });
+}
+
 export async function activityScreen(address: string, navigate: Navigate): Promise<void> {
   const settle = loadingSoon(() => skeletonScreen(navigate));
   const [list, led] = await Promise.all([api.forAddress(address), api.ledger(address)]);
@@ -1699,9 +1761,23 @@ export async function activityScreen(address: string, navigate: Navigate): Promi
   }
   const chits = list.value.chits;
   const me = rememberedAddress();
+
+  /*
+   * Who owes you, and for how long.
+   *
+   * Non-payment is the loudest complaint in the whole research corpus, and until now the
+   * only way to find an unpaid chit was to scroll the same list as everything else. These
+   * are the chits where this wallet is the one waiting: signed by both, not paid, not
+   * declined — oldest first, because age is the thing that matters about them.
+   */
+  const owedToMe = chits
+    .filter((c) => !c.settled && !c.declined && !c.bounty && sameAddress(address, c.chit.kind === 'quote' ? c.chit.payee : c.payTo))
+    .sort((a, b) => a.createdAt - b.createdAt);
+
   const header: HTMLElement[] = [party(address, t('Wallet'), { me })];
   if (led.ok) header.push(...ledgerRows(led.value));
-  const rows = chits.map((chit) => {
+  const owedIds = new Set(owedToMe.map((c) => c.id));
+  const rows = chits.filter((c) => !owedIds.has(c.id)).map((chit) => {
     const state = statusOf(chit);
     const other = chit.chit.kind === 'quote' ? chit.settledFrom : sameAddress(address, chit.chit.payer) ? (chit.payTo ?? null) : chit.chit.payer;
     const item = el('button', {
@@ -1728,6 +1804,15 @@ export async function activityScreen(address: string, navigate: Navigate): Promi
       title: t('Activity'),
       body: [
         el('div', { class: 'card', children: header }),
+        owedToMe.length > 0
+          ? el('div', {
+              class: 'stack stack--tight',
+              children: [
+                el('h2', { text: t('Waiting to be paid') }),
+                el('div', { class: 'list', children: owedToMe.map((c) => owedRow(c, me, navigate)) }),
+              ],
+            })
+          : null,
         chits.length === 0
           ? emptyState({
               icon: 'receipt',

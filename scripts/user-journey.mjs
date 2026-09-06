@@ -198,11 +198,14 @@ try {
     });
     page.on('pageerror', (e) => consoleErrors.push(`[${name}] pageerror: ${e.message}`));
     page.on('requestfailed', (r) => {
+      // A request the browser cancelled because the page moved on is not a failure — every
+      // screen here polls, and a poll in flight when the poller wins is aborted by design.
+      if ((r.failure()?.errorText ?? '').includes('ERR_ABORTED')) return;
       // A third-party CDN going away mid-run is the internet, not the product. The font is
       // loaded with `display=swap` behind a fallback stack precisely so a failure is
       // survivable, so it is recorded separately and does not fail the run.
       const list = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(r.url()) ? failedRequests : thirdPartyFailures;
-      list.push(`[${name}] ${r.url()}`);
+      list.push(`[${name}] ${r.url()} — ${r.failure()?.errorText ?? 'unknown'}`);
     });
     return { context, page, address, name };
   };
@@ -702,6 +705,15 @@ try {
   await shot(hPayer.page, '36-pay-after-delivery');
   const payerSees = await hPayer.page.locator('body').innerText();
   check('the payer sees it was delivered before they decide', /they marked it delivered/i.test(payerSees));
+
+  // Who owes you, and the one tap that chases them. There are no reminders on this platform,
+  // so the person owed is the only thing that can chase a client.
+  await hWorker.page.goto(`${WEB}/a/${encodeURIComponent(hWorker.address)}`, { waitUntil: 'networkidle' });
+  await hWorker.page.waitForSelector('text=Waiting to be paid', { timeout: 20_000 });
+  await shot(hWorker.page, '37-waiting-to-be-paid');
+  const owedBody = await hWorker.page.locator('body').innerText();
+  check('an unpaid chit is listed apart, with its age', /Waiting to be paid/.test(owedBody) && /teaser from the raw footage/.test(owedBody));
+  check('and can be chased in one tap', await hWorker.page.locator('.owed__nudge').count() === 1);
   check('with the link to the work', /Open the delivery/.test(payerSees));
   check('and is told plainly that it obliges nobody', /nothing has been paid because of it/i.test(payerSees));
 
