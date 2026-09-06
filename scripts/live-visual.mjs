@@ -179,8 +179,46 @@ try {
   const notFound = await plainPage.locator('body').innerText();
   check("an unknown route shows chit's own screen, not the platform's 404", /Nothing here/i.test(notFound));
 
-  /* -------------------------------------------------- 6. hygiene */
-  console.log('\n6. Hygiene on the live deployment');
+  /* -------------------------------------------------- the public record, live */
+  console.log('\n6. The record a stranger opens, and the file an accountant opens');
+
+  // The record page is the growth loop: a freelancer sends it to a person who has never
+  // heard of chit. So it has to open for somebody with no wallet, no account and no app.
+  await plainPage.goto(`${BASE}/p/${encodeURIComponent(worker.address.replace(/\s/g, ''))}`, { waitUntil: 'networkidle', timeout: 60_000 });
+  await plainPage.waitForSelector('h1', { timeout: 30_000 });
+  await plainPage.screenshot({ path: `${SHOTS}/08-record.png` });
+  const record = await plainPage.locator('body').innerText();
+  check('a public record opens for a stranger with no wallet', /Record/i.test(record));
+  check(
+    'and a wallet with no settled work reads as new, not as broken',
+    /No settled work on this wallet|Nothing here yet/.test(record),
+    record.slice(0, 80),
+  );
+
+  // The balance hint. It reads the real mainnet chain, and "unknown" is a valid answer that
+  // the app must survive — so both shapes are acceptable, and an error is not.
+  const balance = await (await fetch(`${BASE}/api/balance/${encodeURIComponent(worker.address)}`)).json();
+  check('the balance hint answers from the real chain', balance.known === true || balance.known === false, JSON.stringify(balance));
+
+  // The tax export, as a plain URL rather than something the page assembles — a blob
+  // download is not reliably allowed inside a WebView.
+  const csv = await fetch(`${BASE}/api/addresses/${encodeURIComponent(worker.address)}/export.csv`);
+  check('the export is served as a real CSV attachment', csv.status === 200 && (csv.headers.get('content-type') ?? '').startsWith('text/csv'));
+  check('named after the wallet, so two exports do not collide', (csv.headers.get('content-disposition') ?? '').includes('chit-NQ'));
+  const header = (await csv.text()).split('\r\n')[0];
+  check('with every column named', header === 'date,chit_id,description,role,amount,currency,nim_received,counterparty,transaction,receipt_url', header);
+
+  // All five languages, on the deployment rather than the bundler's word for it: each
+  // dictionary is a separate chunk, so the thing that can break is the chunk never arriving.
+  for (const [code, phrase] of [['de', /Deal einfügen/], ['es', /Pega el trato/], ['fr', /Colle l’accord/], ['pt', /Cole o combinado/]]) {
+    await plainPage.goto(`${BASE}/?lang=${code}`, { waitUntil: 'networkidle', timeout: 60_000 });
+    await plainPage.waitForSelector('h1', { timeout: 30_000 });
+    const body = await plainPage.locator('body').innerText();
+    check(`the live deployment serves ${code}`, phrase.test(body) && !/Paste the deal/.test(body), body.slice(0, 50));
+  }
+
+  /* -------------------------------------------------- 7. hygiene */
+  console.log('\n7. Hygiene on the live deployment');
   check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
   check('no failed requests', failedRequests.length === 0, failedRequests.slice(0, 3).join(' | '));
 
