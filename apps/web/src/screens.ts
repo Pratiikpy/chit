@@ -337,12 +337,37 @@ function who(address: string, me: string | null): HTMLElement {
 }
 
 /** The facts a bookkeeper wants and a person does not need in order to decide. Folded, never gone. */
+/**
+ * The price both sides agreed, recovered from the two numbers they signed.
+ *
+ * The fiat amount and the Luna amount were quoted together and are both inside the
+ * canonical text, so their ratio *is* the rate that was used. It never had to be stored,
+ * and because it is derived it cannot disagree with the signature.
+ */
+function signedRate(chit: ApiChit): string | null {
+  const luna = BigInt(chit.chit.luna);
+  if (luna <= 0n) return null;
+  const minor = Number(BigInt(chit.chit.amountMinor));
+  const nimAmount = Number(luna) / 100_000;
+  if (!Number.isFinite(minor) || nimAmount <= 0) return null;
+  const perNim = minor / 100 / nimAmount;
+  return `1 NIM = ${perNim.toPrecision(4)} ${chit.chit.currency}`;
+}
+
 function factRows(chit: ApiChit, options: { settled?: boolean } = {}): HTMLElement {
   const rows: HTMLElement[] = [row(t('Amount'), money(chit.chit.amountMinor, chit.chit.currency)), row(t('In NIM'), nim(chit.chit.luna))];
   if (chit.chit.deliverables > 1) rows.push(row(t('Deliverables'), String(chit.chit.deliverables)));
   if (!options.settled) rows.push(row(t('Deadline'), t('block {n}', { n: chit.chit.deadlineBlock })));
   if (chit.settledBlock) rows.push(row(t('Block'), String(chit.settledBlock)));
+  const rate = signedRate(chit);
+  if (rate) rows.push(row(t('Agreed rate'), rate));
   rows.push(row(t('Rate taken at'), t('block {n}', { n: chit.chit.rateBlock })));
+  // What arrived, whenever it is not what was agreed. Settlement accepts 97% and upwards,
+  // so the two can differ honestly — and a receipt that shows only the agreed figure is
+  // describing the contract while claiming to describe the payment.
+  if (chit.settledLuna && chit.settledLuna !== chit.chit.luna) {
+    rows.push(row(t('Actually received'), nim(chit.settledLuna)));
+  }
   rows.push(row(t('Chit id'), chit.id));
   return details(t('Details'), rows);
 }
@@ -1375,6 +1400,14 @@ function receipt(chit: ApiChit, me: string | null, isWorker: boolean): HTMLEleme
       amountHero(chit, { huge: true }),
       // Every fiat receipt in the field is a promise about a future date. This one is not.
       el('p', { class: 'receipt__final', text: t('Nothing is pending, nothing can be reversed, and nobody is holding it.') }),
+      chit.settledLuna && chit.settledLuna !== chit.chit.luna
+        ? note(
+            BigInt(chit.settledLuna) > BigInt(chit.chit.luna)
+              ? t('They sent {actual} — more than the {agreed} agreed. All of it is yours.', { actual: nim(chit.settledLuna), agreed: nim(chit.chit.luna) })
+              : t('They sent {actual}, against {agreed} agreed. The rate moved between signing and paying; chit accepts a small difference so a payment is never stranded.', { actual: nim(chit.settledLuna), agreed: nim(chit.chit.luna) }),
+            'calm',
+          )
+        : null,
       el('hr', { class: 'receipt__cut' }),
       el('div', { children: parties }),
       reference,

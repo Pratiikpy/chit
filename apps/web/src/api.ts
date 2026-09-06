@@ -35,6 +35,8 @@ export interface ApiChit {
   settledBlock: number | null;
   settledAt: number | null;
   settledFrom: string | null;
+  /** Luna the settling payment actually carried. Null for chits settled before it was recorded. */
+  settledLuna?: string | null;
   /** Bounty only: the tester's answer and the pool's payout. */
   answer: string | null;
   payoutTx: string | null;

@@ -64,6 +64,8 @@ interface Wire {
   settledAt?: number;
   settledBlock?: number;
   settledFrom?: string;
+  /** Luna as a decimal string — JSON has no bigint. */
+  settledLuna?: string;
   answer?: string;
   deviceHash?: string;
   payoutTx?: string;
@@ -88,6 +90,7 @@ function toWire(stored: StoredChit, events: EventRecord[], rev: number): Wire {
     ...(stored.settledAt !== undefined ? { settledAt: stored.settledAt } : {}),
     ...(stored.settledBlock !== undefined ? { settledBlock: stored.settledBlock } : {}),
     ...(stored.settledFrom !== undefined ? { settledFrom: stored.settledFrom } : {}),
+    ...(stored.settledLuna !== undefined ? { settledLuna: stored.settledLuna.toString(10) } : {}),
     ...(stored.answer !== undefined ? { answer: stored.answer } : {}),
     ...(stored.deviceHash !== undefined ? { deviceHash: stored.deviceHash } : {}),
     ...(stored.payoutTx !== undefined ? { payoutTx: stored.payoutTx } : {}),
@@ -113,6 +116,7 @@ function fromWire(wire: Wire): { stored: StoredChit; events: EventRecord[]; rev:
       ...(wire.settledAt !== undefined ? { settledAt: wire.settledAt } : {}),
       ...(wire.settledBlock !== undefined ? { settledBlock: wire.settledBlock } : {}),
       ...(wire.settledFrom !== undefined ? { settledFrom: wire.settledFrom } : {}),
+      ...(wire.settledLuna !== undefined ? { settledLuna: BigInt(wire.settledLuna) } : {}),
       ...(wire.answer !== undefined ? { answer: wire.answer } : {}),
       ...(wire.deviceHash !== undefined ? { deviceHash: wire.deviceHash } : {}),
       ...(wire.payoutTx !== undefined ? { payoutTx: wire.payoutTx } : {}),
@@ -331,7 +335,7 @@ export class BlobRepository implements ChitRepository {
     return true;
   }
 
-  async markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string }): Promise<boolean> {
+  async markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string; value?: bigint }): Promise<boolean> {
     if (this.#recall(id).settled) return false;
     const loaded = await this.#loadPatiently(id);
     if (!loaded || loaded.stored.settledTx) return false;
@@ -343,6 +347,7 @@ export class BlobRepository implements ChitRepository {
       settledBlock: tx.blockNumber,
       settledAt: now,
       ...(tx.from ? { settledFrom: tx.from } : {}),
+      ...(tx.value !== undefined ? { settledLuna: tx.value } : {}),
     };
     const events: EventRecord[] = [...loaded.events, { event: 'settled', detail: tx.hash, at: now }];
     await this.#save(stored, events, loaded.rev);

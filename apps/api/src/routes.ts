@@ -113,6 +113,12 @@ function present(
     settledAt: stored.settledAt ?? null,
     /** Sender of the settling payment. On a quote, the only record of who the client was. */
     settledFrom: stored.settledFrom ?? null,
+    /**
+     * What the settling payment actually carried, which is not always what was agreed:
+     * settlement accepts 97% of the signed Luna and upwards. Null on anything settled
+     * before this was recorded.
+     */
+    settledLuna: stored.settledLuna !== undefined ? stored.settledLuna.toString(10) : null,
     /** Bounty only. */
     answer: stored.answer ?? null,
     payoutTx: stored.payoutTx ?? null,

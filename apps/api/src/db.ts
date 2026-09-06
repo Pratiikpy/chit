@@ -33,6 +33,15 @@ export interface StoredChit {
   settledBlock?: number;
   /** Sender of the settling transaction. On a quote this is the only record of who the client was. */
   settledFrom?: string;
+  /**
+   * The Luna the settling transaction actually carried.
+   *
+   * Not the same number as `chit.luna`, which is what was *agreed*. Settlement accepts
+   * anything from 97% of the signed amount upwards (`chain.ts`), so a receipt that renders
+   * the agreed figure is describing the contract, not the payment. Both are kept, and the
+   * receipt says so whenever they differ.
+   */
+  settledLuna?: bigint;
   /** Bounty only: the tester's answer, the device that claimed it, and the payout the pool sent. */
   answer?: string;
   deviceHash?: string;
@@ -157,6 +166,7 @@ interface ChitRow {
   payout_tx: string | null;
   declined_at: number | null;
   parent: string | null;
+  settled_luna: string | null;
   created_at: number;
 }
 
@@ -193,6 +203,7 @@ function rowToStored(row: ChitRow): StoredChit {
     ...(row.payout_tx !== null ? { payoutTx: row.payout_tx } : {}),
     ...(row.declined_at !== null ? { declinedAt: row.declined_at } : {}),
     ...(row.parent !== null && row.parent !== undefined ? { parent: row.parent } : {}),
+    ...(row.settled_luna !== null && row.settled_luna !== undefined ? { settledLuna: BigInt(row.settled_luna) } : {}),
     createdAt: row.created_at,
   };
 }
@@ -209,7 +220,7 @@ export class ChitStore {
     // Column added after the first deployments. The check makes the ALTER idempotent.
     const cols = (this.#db.prepare('PRAGMA table_info(chits)').all() as Array<{ name: string }>).map((c) => c.name);
     if (!cols.includes('settled_from')) this.#db.exec('ALTER TABLE chits ADD COLUMN settled_from TEXT');
-    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent']) {
+    for (const col of ['answer', 'device_hash', 'payout_tx', 'parent', 'settled_luna']) {
       if (!cols.includes(col)) this.#db.exec(`ALTER TABLE chits ADD COLUMN ${col} TEXT`);
     }
     if (!cols.includes('declined_at')) this.#db.exec('ALTER TABLE chits ADD COLUMN declined_at INTEGER');
@@ -336,14 +347,14 @@ export class ChitStore {
   }
 
   /** Record that a payment carrying this chit's memo settled on chain. */
-  markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string }): boolean {
+  markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string; value?: bigint }): boolean {
     const now = Date.now();
     const result = this.#db
       .prepare(
-        `UPDATE chits SET settled_tx = ?, settled_block = ?, settled_at = ?, settled_from = ?
+        `UPDATE chits SET settled_tx = ?, settled_block = ?, settled_at = ?, settled_from = ?, settled_luna = ?
          WHERE id = ? AND settled_tx IS NULL`,
       )
-      .run(tx.hash, tx.blockNumber, now, tx.from ?? null, id);
+      .run(tx.hash, tx.blockNumber, now, tx.from ?? null, tx.value !== undefined ? tx.value.toString(10) : null, id);
 
     if (result.changes === 0) return false;
     this.#recordEvent(id, 'settled', tx.hash, now);

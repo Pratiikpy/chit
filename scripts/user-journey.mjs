@@ -371,6 +371,9 @@ try {
   const settled = await (await fetch(`${API}/api/chits/${encodeURIComponent(chitId)}`)).json();
   check('settlement was observed on chain, not asserted by the client', settled.settled === true);
   check('the settling transaction was recorded', typeof settled.settledTx === 'string');
+  // Settlement accepts 97% of the signed Luna and upwards, so what arrived is not always
+  // what was agreed. The receipt may only describe the payment if the payment is recorded.
+  check('and what the payment actually carried, not just what was agreed', typeof settled.settledLuna === 'string' && BigInt(settled.settledLuna) > 0n, settled.settledLuna ?? 'null');
   check(
     'the history is complete and in order',
     settled.events.map((e) => e.event).join(',') === 'created,countersigned,settled',

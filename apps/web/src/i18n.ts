@@ -248,6 +248,11 @@ const de: Dict = {
   'in about {n} days': 'in etwa {n} Tagen',
   Deadline: 'Frist',
   'block {n}': 'Block {n}',
+  'Agreed rate': 'Vereinbarter Kurs',
+  'Actually received': 'Tatsächlich erhalten',
+  'They sent {actual} — more than the {agreed} agreed. All of it is yours.': 'Es wurden {actual} gesendet – mehr als die vereinbarten {agreed}. Alles davon gehört dir.',
+  'They sent {actual}, against {agreed} agreed. The rate moved between signing and paying; chit accepts a small difference so a payment is never stranded.':
+    'Es wurden {actual} gesendet, vereinbart waren {agreed}. Der Kurs hat sich zwischen Unterschrift und Zahlung bewegt; chit akzeptiert eine kleine Abweichung, damit eine Zahlung nie hängen bleibt.',
   'Rate taken at': 'Kurs genommen bei',
   'Chit id': 'Chit-ID',
 

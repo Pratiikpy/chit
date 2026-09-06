@@ -43,7 +43,7 @@ export interface ChitRepository {
   create(input: CreateChitInput): Promise<{ created: boolean; chit: StoredChit }>;
   get(id: string): Promise<StoredChit | undefined>;
   countersign(id: string, signature: Signature, countersignerAddress: string): Promise<boolean>;
-  markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string }): Promise<boolean>;
+  markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string; value?: bigint }): Promise<boolean>;
   /** Countersigned but unpaid — what a watcher sweeps. */
   awaitingSettlement(): Promise<StoredChit[]>;
   forAddress(address: string, limit?: number): Promise<StoredChit[]>;
@@ -86,7 +86,7 @@ export class SqliteRepository implements ChitRepository {
     return this.store.countersign(id, signature, countersignerAddress);
   }
 
-  async markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string }) {
+  async markSettled(id: string, tx: { hash: string; blockNumber: number; from?: string; value?: bigint }) {
     return this.store.markSettled(id, tx);
   }
 
