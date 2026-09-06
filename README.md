@@ -366,7 +366,7 @@ gap named is a decision:
 
 | | |
 |---|---|
-| Escrow, disputes, refunds | All need custody or something on chain to enforce against. The honest substitutes are the payer's record, smaller increments, and saying *final* above every Pay button. |
+| Escrow, disputes, refunds | Nimiq PoS **does** have HTLC contracts — `@nimiq/core` exports `HtlcContract`, `HtlcData` and three proof types — so this is not a chain limit. The blocker is one level up: the Mini App provider's only payment methods are `sendBasicTransaction(WithData)`, and a *basic* transaction cannot create a contract. Non-custodial escrow is therefore impossible **inside a Mini App**, not on Nimiq. Until an extended-transaction method exists, the honest substitutes are the payer's record, smaller increments, and saying *final* above every Pay button. |
 | Push reminders | The platform has none. Activity leads with who owes you instead, and never promises a notification. |
 | KYC, or any account | The loudest complaint in the corpus is being locked out. There is deliberately nothing to be locked out of. |
 | File storage | Links only. Storage is a different product with a different liability — which is exactly what the sealed master above would change. |
