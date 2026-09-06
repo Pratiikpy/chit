@@ -294,8 +294,28 @@ const de: Dict = {
   'What it never does': 'Was es nie tut',
   'Hold your money. Every payment goes straight from one wallet to the other; there is no balance and no withdrawal.': 'Dein Geld verwahren. Jede Zahlung geht direkt von einer Wallet zur anderen; es gibt kein Guthaben und keine Auszahlung.',
   'Take a cut. There is no fee. A NIM transaction is free and lands in about a second.': 'Einen Anteil nehmen. Es gibt keine Gebühr. Eine NIM-Transaktion ist kostenlos und kommt in etwa einer Sekunde an.',
-  'Ask for an account. Your wallet is your identity; your record is computed from settled payments and nothing else.': 'Nach einem Konto fragen. Deine Wallet ist deine Identität; dein Verlauf wird nur aus abgewickelten Zahlungen berechnet.',
   'Protect you. This is proof of payment, not escrow or a dispute service. Use it with clients you already talk to directly.': 'Dich schützen. Das ist ein Zahlungsnachweis, kein Treuhandservice und keine Streitschlichtung. Nutze es mit Kunden, mit denen du schon direkt sprichst.',
+  'Ask for an account. There is no password, no code sent to your phone, no identity check — and so there is nothing to be locked out of. Your wallet is your identity; your record is computed from settled payments and nothing else.':
+    'Nach einem Konto fragen. Es gibt kein Passwort, keinen Code aufs Handy, keine Identitätsprüfung – und damit nichts, wovon du ausgesperrt werden kannst. Deine Wallet ist deine Identität; dein Verlauf wird nur aus abgewickelten Zahlungen berechnet.',
+  Reference: 'Referenz',
+  'Give this to anyone who needs to check the payment.': 'Gib das jedem, der die Zahlung prüfen muss.',
+  'Nothing is pending, nothing can be reversed, and nobody is holding it.': 'Nichts ist ausstehend, nichts lässt sich rückgängig machen, und niemand verwahrt es.',
+  'You kept all of it. A 20% marketplace cut would have been {amount}.': 'Du hast alles behalten. Ein 20-%-Marktplatzanteil wären {amount} gewesen.',
+  'chit never asks you to deposit, or to pay a fee to be paid. If anyone asks you to send money first, it is a scam — leave.':
+    'chit verlangt nie eine Einzahlung oder eine Gebühr, damit du bezahlt wirst. Wenn jemand verlangt, dass du zuerst Geld schickst, ist es Betrug – geh weg.',
+  'When something goes wrong': 'Wenn etwas schiefgeht',
+  'There is no support queue, because there is nothing for support to release. Everything that can go wrong has an answer you can act on yourself:':
+    'Es gibt keine Support-Warteschlange, weil es nichts gibt, was ein Support freigeben könnte. Auf alles, was schiefgehen kann, gibt es eine Antwort, die du selbst umsetzen kannst:',
+  'They signed and never paid. Nothing was lost — you were never owed anything until they paid. Their record now says one left unpaid, and anyone they send a chit to will see it.':
+    'Unterschrieben, aber nie gezahlt. Nichts ist verloren – dir stand nichts zu, bevor gezahlt wurde. Im Verlauf dieser Wallet steht jetzt „einer unbezahlt geblieben“, und jeder, der von ihr einen Chit bekommt, sieht das.',
+  'You paid and the work never came. chit cannot reverse a payment; nobody can. Pay in smaller steps with someone new, and check their record before you sign.':
+    'Du hast gezahlt und die Arbeit kam nie. chit kann eine Zahlung nicht rückgängig machen – niemand kann das. Zahle bei neuen Leuten in kleineren Schritten und sieh dir vorher ihren Verlauf an.',
+  'The payment is not showing. chit watches the chain itself, not the wallet — reopen the chit and it will catch up. If the transaction is on nimiq.watch, the money has moved.':
+    'Die Zahlung erscheint nicht. chit beobachtet die Chain selbst, nicht die Wallet – öffne den Chit erneut, dann holt er auf. Steht die Transaktion auf nimiq.watch, ist das Geld unterwegs.',
+  'You lost the link. Every chit your wallet signed is in Activity, on any device you connect the same wallet from.':
+    'Du hast den Link verloren. Jeder Chit, den deine Wallet unterschrieben hat, steht im Verlauf – auf jedem Gerät, auf dem du dieselbe Wallet verbindest.',
+  'chit disappears. The receipt link carries the signed words, and your browser checks them against a public Nimiq node. It works without us.':
+    'chit verschwindet. Der Beleg-Link trägt die unterschriebenen Worte, und dein Browser prüft sie gegen einen öffentlichen Nimiq-Knoten. Das funktioniert ohne uns.',
   'How a receipt is checked': 'Wie ein Beleg geprüft wird',
   'The words are hashed; that hash is the 64-byte memo of the NIM payment. A receipt link carries the words, so your browser recomputes the hash and reads the transaction from a public Nimiq node — no chit server needed.':
     'Die Worte werden gehasht; dieser Hash ist die 64-Byte-Nachricht der NIM-Zahlung. Ein Beleg-Link trägt die Worte, also berechnet dein Browser den Hash neu und liest die Transaktion von einem öffentlichen Nimiq-Knoten – ganz ohne chit-Server.',

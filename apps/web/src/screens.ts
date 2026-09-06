@@ -1057,6 +1057,12 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me, nameable: true }), dueRow(chit), factRows(chit)] }),
         strip,
         el('p', { class: 'small secondary', text: t('Signing means you agree to these exact words. It does not move any money — they pay after you sign, and the payment goes to the wallet you sign with.') }),
+        /*
+         * The scam freelancers describe most often is: move the conversation off-platform, then
+         * ask for a deposit. chit's flow has the same shape — a stranger, a chat, a link — so the
+         * difference has to be said on the screen where it would happen, not in a help page.
+         */
+        note(t('chit never asks you to deposit, or to pay a fee to be paid. If anyone asks you to send money first, it is a scam — leave.'), 'calm'),
         walletBanner(detection, chit.shareUrl),
         messages,
       ],
@@ -1168,6 +1174,11 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
     await payFlow({ chit, recipient: payTo, button: payButton, messages, navigate });
   }
   const demoNote = chit.demoWorker ? note(t('Signed by the demo worker — a labelled stand-in so you can see the whole flow. It keeps whatever you pay it.'), 'warn') : null;
+  // The worker's record, before money moves. The highest-voted complaint in the review corpus
+  // is a freelancer who delivered and never got paid; the mirror of that is a client paying a
+  // wallet they know nothing about.
+  const strip = el('div', { class: 'slot', children: [skeleton('line')] });
+  if (payTo) void workerStrip(payTo).then((node) => (node ? strip.replaceChildren(node) : strip.remove()));
   mount(
     screen({
       header: topBar(navigate),
@@ -1185,6 +1196,7 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
             factRows(chit),
           ],
         }),
+        strip,
         el('p', { class: 'small secondary', text: t('The exact NIM is priced when you tap Pay, so the agreed amount stays whole. It goes straight to their wallet — nothing is held on the way, and a payment cannot be reversed.') }),
         walletBanner(detection, chit.shareUrl),
         noNimHelp(),
@@ -1232,7 +1244,7 @@ function awaitingPaymentScreen(chit: ApiChit, navigate: Navigate, isWorker: bool
 /* ------------------------------------------------------------------ settled */
 
 /** The receipt: what was agreed, who paid whom, and where on the chain it lives. */
-function receipt(chit: ApiChit, me: string | null): HTMLElement {
+function receipt(chit: ApiChit, me: string | null, isWorker: boolean): HTMLElement {
   const paidBy = chit.chit.kind === 'quote' ? chit.settledFrom : chit.chit.payer;
   const paidTo = chit.payTo;
 
@@ -1241,6 +1253,22 @@ function receipt(chit: ApiChit, me: string | null): HTMLElement {
   const parties: HTMLElement[] = [];
   if (paidBy) parties.push(sameAddress(me, paidBy) ? row(t('Paid by'), who(paidBy, me)) : party(paidBy, t('Paid by'), { me, nameable: true, size: 32 }));
   if (paidTo) parties.push(sameAddress(me, paidTo) ? row(t('Paid to'), who(paidTo, me)) : party(paidTo, t('Paid to'), { me, nameable: true, size: 32 }));
+
+  /*
+   * The reference, the way a bank shows one.
+   *
+   * Every receipt a freelancer holds today is an assertion by whoever was holding the money,
+   * and a screenshot of it is a dead end. A reference is a lookup: this is the string to give
+   * anyone who needs to check the payment, and it is one tap to copy.
+   */
+  const reference = el('div', {
+    class: 'reference',
+    children: [
+      el('div', { class: 'line__label', text: t('Reference') }),
+      copyable(chit.id, chit.id, t('Copied'), t('Copy')),
+      el('p', { class: 'small muted', text: t('Give this to anyone who needs to check the payment.') }),
+    ],
+  });
   if (chit.settledTx) parties.push(explorerRow(chit.settledTx));
 
   return el('div', {
@@ -1255,11 +1283,26 @@ function receipt(chit: ApiChit, me: string | null): HTMLElement {
           }),
         ],
       }),
-      amountHero(chit, { huge: true }),
-      el('hr', { class: 'receipt__cut' }),
+      /*
+       * The words before the number.
+       *
+       * The reason a Venmo payment is legible in a screenshot is that the note is part of the
+       * payment, not a caption under it. A receipt that leads with an amount says how much; a
+       * receipt that leads with the sentence says what for — which is the thing in dispute.
+       */
       deal(chit.chit.text),
+      amountHero(chit, { huge: true }),
+      // Every fiat receipt in the field is a promise about a future date. This one is not.
+      el('p', { class: 'receipt__final', text: t('Nothing is pending, nothing can be reversed, and nobody is holding it.') }),
       el('hr', { class: 'receipt__cut' }),
       el('div', { children: parties }),
+      reference,
+      /*
+       * The most quotable line in the app, on the object a freelancer actually shows people.
+       * It lived on the Activity screen, which is the one screen nobody else ever sees.
+       * Stated per payment and captioned literally: this is arithmetic, not a claim.
+       */
+      isWorker ? el('p', { class: 'receipt__kept', text: t('You kept all of it. A 20% marketplace cut would have been {amount}.', { amount: nimRound((BigInt(chit.chit.luna) / 5n).toString(10)) }) }) : null,
       factRows(chit, { settled: true }),
     ],
   });
@@ -1284,7 +1327,7 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
         lateBadge(chit) ? el('div', { class: 'row-actions', children: [lateBadge(chit)] }) : null,
         testnetBanner(chit),
         chit.bounty ? note(t('A bounty, paid by chit for your answer: “{answer}”', { answer: chit.answer ?? '' }), 'good') : null,
-        receipt(chit, me),
+        receipt(chit, me, isWorker),
         note(
           isWorker
             ? t('That is yours. This receipt is the agreement — anyone can check it against the chain, with no account.')
@@ -1380,8 +1423,9 @@ export async function verifyScreen(txHash: string, navigate: Navigate): Promise<
           children: [el('span', { class: `badge ${good ? 'badge--good' : 'badge--bad'}`, children: [icon(good ? 'shield' : 'alert'), document.createTextNode(good ? checkedBy : (chit?.verification?.detail ?? t('Verification failed')))] })],
         }),
         chit?.chit.chain === 'test' ? note(t('This is a test-network chit. The signatures are real, but no real money moved — the amount below is not spendable.'), 'warn') : null,
-        chit ? amountHero(chit, { huge: true }) : null,
+        // The sentence first, then the number: what the payment was for is the thing in dispute.
         deal(text),
+        chit ? amountHero(chit, { huge: true }) : null,
         el('div', {
           class: 'card',
           children: [
@@ -1520,7 +1564,7 @@ export function aboutScreen(navigate: Navigate): void {
               children: [
                 el('li', { text: t('Hold your money. Every payment goes straight from one wallet to the other; there is no balance and no withdrawal.') }),
                 el('li', { text: t('Take a cut. There is no fee. A NIM transaction is free and lands in about a second.') }),
-                el('li', { text: t('Ask for an account. Your wallet is your identity; your record is computed from settled payments and nothing else.') }),
+                el('li', { text: t('Ask for an account. There is no password, no code sent to your phone, no identity check — and so there is nothing to be locked out of. Your wallet is your identity; your record is computed from settled payments and nothing else.') }),
                 el('li', { text: t('Protect you. This is proof of payment, not escrow or a dispute service. Use it with clients you already talk to directly.') }),
               ],
             }),
@@ -1539,6 +1583,23 @@ export function aboutScreen(navigate: Navigate): void {
             el('h2', { text: t('The bounty') }),
             el('p', { class: 'secondary', text: t('chit pays real chits for a sentence of feedback, from a pool funded by the founder. The address, balance, rules and every payout are public.') }),
             el('button', { class: 'link-row foot__link', attrs: { type: 'button' }, children: [document.createTextNode(t('See the pool')), icon('arrow-right', 'icon--sm')], on: { click: () => navigate('/bounty') } }),
+          ],
+        }),
+        el('div', {
+          class: 'card card--pad stack stack--tight',
+          children: [
+            el('h2', { text: t('When something goes wrong') }),
+            el('p', { class: 'secondary', text: t('There is no support queue, because there is nothing for support to release. Everything that can go wrong has an answer you can act on yourself:') }),
+            el('ul', {
+              class: 'rules',
+              children: [
+                el('li', { text: t('They signed and never paid. Nothing was lost — you were never owed anything until they paid. Their record now says one left unpaid, and anyone they send a chit to will see it.') }),
+                el('li', { text: t('You paid and the work never came. chit cannot reverse a payment; nobody can. Pay in smaller steps with someone new, and check their record before you sign.') }),
+                el('li', { text: t('The payment is not showing. chit watches the chain itself, not the wallet — reopen the chit and it will catch up. If the transaction is on nimiq.watch, the money has moved.') }),
+                el('li', { text: t('You lost the link. Every chit your wallet signed is in Activity, on any device you connect the same wallet from.') }),
+                el('li', { text: t('chit disappears. The receipt link carries the signed words, and your browser checks them against a public Nimiq node. It works without us.') }),
+              ],
+            }),
           ],
         }),
         el('p', { class: 'small muted', text: t('Open source under the MIT licence. Built for the Nimiq Mini Apps Competition, Cycle 2, 2026. Signatures are verified by chit’s server; payments by the Nimiq chain.') }),

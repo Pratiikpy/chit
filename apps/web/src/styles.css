@@ -1136,3 +1136,43 @@ h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacin
   .receipt__check .icon path { animation: none; }
   a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #555; }
 }
+
+/* ---------- receipt additions ---------- */
+
+/*
+ * The finality line. Every fiat receipt a freelancer holds is a promise about a future date —
+ * "1–7 business days", "pending", "released on approval". This one is a statement about now,
+ * so it sits directly under the amount in the good colour, not in a box.
+ */
+.receipt__final {
+  margin: -4px 0 0;
+  color: var(--chit-good);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+/* Arithmetic, stated plainly, on the object a freelancer shows other people. */
+.receipt__kept {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px dashed var(--chit-line-strong);
+  color: var(--chit-secondary);
+  font-size: 0.875rem;
+}
+/*
+ * The reference is a full-width block, not a left/right row: squeezed into a `.line__value`
+ * the copy button wrapped to "Co / py". Label, the string, then what it is for.
+ */
+/*
+ * `min-width: 0` on every grid child, because a chit id is 49 unbreakable characters and a
+ * grid item's default `min-width: auto` refuses to shrink below its content — which pushed
+ * the whole receipt to 505px inside a 390px phone. Caught by the journey's width assertion.
+ */
+.receipt { grid-template-columns: minmax(0, 1fr); }
+.receipt > * { min-width: 0; }
+/* `minmax(0, 1fr)`, not `1fr`: a grid column is sized by its widest item unless told it may shrink. */
+.reference { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; padding: 12px 0 4px; border-top: 1px solid var(--chit-line); }
+.reference .copyable { min-height: 48px; }
+.reference .copyable__text { font-family: var(--chit-mono); font-size: 0.8125rem; }
+.reference p { margin: 0; }
+/* A copy button never wraps and never shrinks. */
+.copyable .btn--inline { flex: 0 0 auto; white-space: nowrap; }
