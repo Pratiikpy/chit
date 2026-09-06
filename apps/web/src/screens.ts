@@ -1190,6 +1190,13 @@ function cashOutHelp(): HTMLElement {
     t('Turning NIM into money'),
     [
       el('p', { text: t('The NIM is in your Nimiq Pay wallet now, and it is yours — nothing is held by chit. To turn it into your own currency, send it to an exchange that lists NIM and sell it there, or use the Nimiq Wallet’s swap into USDC or USDT and cash out from that. Which of these is open to you depends on your country; chit does not sell or swap anything itself.') }),
+      /*
+       * A measured, expensive trap. KuCoin's NIM withdrawal fee is 1,500 NIM against a
+       * 3,000 NIM minimum — half the money at the floor — while its USDT withdrawal is
+       * 0.80 USDT. Read from KuCoin's own currencies endpoint, 6 Sep 2026. A freelancer who
+       * moves NIM the wrong way once loses more than every platform fee chit saves them.
+       */
+      el('p', { children: [el('strong', { text: t('One rule that saves money: ') }), document.createTextNode(t('send NIM to an exchange, never withdraw NIM from one. Sell it there and withdraw the stablecoin instead — withdrawing NIM itself can cost a large share of a small balance.'))] }),
       el('p', { text: t('Many freelancers simply keep it: the next chit you pay a collaborator, or the next tool you buy, can be paid in NIM directly.') }),
     ],
     { cls: 'help' },
