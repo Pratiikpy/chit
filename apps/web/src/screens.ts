@@ -3450,6 +3450,29 @@ export async function profileScreen(address: string, navigate: Navigate): Promis
         ],
       }),
     );
+    /*
+     * Only shown when it actually says something the plain average does not — on an
+     * established, steady record the two round to the same figure, and a second number
+     * that agrees with the first is clutter, not information. It diverges exactly when a
+     * review needs a caveat: an old rating still holding the mean up, or one large job
+     * saying more than several small ones.
+     */
+    if (view.weightedRating !== null && view.weightedRating.toFixed(1) !== view.averageRating.toFixed(1)) {
+      headline.push(
+        details(
+          t('Weighted for recency and job size: {rating}', { rating: view.weightedRating.toFixed(1) }),
+          [
+            el('p', {
+              class: 'small secondary',
+              text: t(
+                'The average above treats every review the same, however old or however small the job. This one leans toward recent reviews and toward larger jobs — the same signed reviews, weighted rather than replaced.',
+              ),
+            }),
+          ],
+          { cls: 'help' },
+        ),
+      );
+    }
   }
 
   const facts: HTMLElement[] = [];

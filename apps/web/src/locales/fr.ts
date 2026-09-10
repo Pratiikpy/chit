@@ -631,6 +631,10 @@ const fr: Dict = {
   'Could not open the PDF. Nothing was sent anywhere — try again.': 'Impossible d\'ouvrir le PDF. Rien n\'a été envoyé — réessaie.',
   'Settled in NIM on the Nimiq blockchain. Anyone can verify this transaction against the reference above, with no account.': 'Réglé en NIM sur la blockchain Nimiq. Tout le monde peut vérifier cette transaction avec la référence ci-dessus, sans compte.',
   'Settled in NIM on the Nimiq blockchain. This document was generated on your device; chit never saw the details above the line.': 'Réglé en NIM sur la blockchain Nimiq. Ce document a été généré sur ton appareil ; chit n\'a jamais vu les informations ci-dessus.',
+
+  /* ---- the weighted rating, next to the plain average ---- */
+  'Weighted for recency and job size: {rating}': 'Pondéré selon la récence et la taille du travail : {rating}',
+  'The average above treats every review the same, however old or however small the job. This one leans toward recent reviews and toward larger jobs — the same signed reviews, weighted rather than replaced.': 'La moyenne ci-dessus traite chaque avis de la même façon, quel que soit son âge ou la taille du travail. Ce chiffre favorise les avis récents et les travaux plus importants — les mêmes avis signés, pondérés plutôt que remplacés.',
 };
 
 export default fr;

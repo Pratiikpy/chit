@@ -61,6 +61,62 @@ export function sameAddress(a: string | undefined, b: string | undefined): boole
   return a.replace(/\s/g, '').toUpperCase() === b.replace(/\s/g, '').toUpperCase();
 }
 
+/**
+ * A review this old counts half as much as one from today.
+ *
+ * Six months: long enough that one bad week early on is not still setting somebody's score a
+ * year later, short enough that "reads well" means "reads well lately" rather than "read well
+ * once." A round, statable number rather than one fitted to data this product does not have
+ * enough of yet to fit anything to honestly.
+ */
+const REVIEW_HALF_LIFE_DAYS = 180;
+
+function timeWeight(atMs: number, nowMs: number): number {
+  const days = Math.max(0, (nowMs - atMs) / 86_400_000);
+  return 2 ** (-days / REVIEW_HALF_LIFE_DAYS);
+}
+
+/**
+ * A review bound to a bigger payment counts for more — `ln(1 + luna)` rather than `luna`
+ * itself, so doubling an already-large payment barely moves the weight. That is the property
+ * that stops one large job from being worth fifty ordinary ones; a linear weight would not.
+ */
+function valueWeight(luna: bigint): number {
+  const n = Number(luna);
+  return Number.isFinite(n) && n > 0 ? Math.log1p(n) : 0;
+}
+
+/**
+ * The headline number, upgraded from a plain mean — but not with an invented statistical
+ * prior. A plain average has two measured failures: rating inflation (eBay sellers cluster
+ * near 100% positive; around 90% of Chicago Uber rides get 5 stars — rating a livelihood down
+ * feels worse than the rating is worth) and no way to tell "5.0 from one review" apart from
+ * "5.0 from fifty", which is exactly what a marketplace rating never shows.
+ *
+ * A Bayesian shrinkage toward some "population average" would need real, calibrated data this
+ * product does not have yet — a made-up prior dressed as statistics is the same guess as a
+ * plain mean with better vocabulary, not a more honest one. What this fixes instead are the
+ * two properties true regardless of data volume: a recent review should outweigh an old one,
+ * and a review tied to real money should outweigh one tied to a token amount. Small samples
+ * are handled by showing the count next to the number, never by hiding it inside one figure.
+ */
+export function weightedRating(reviews: ProfileReview[], now: number = Date.now()): number | null {
+  if (reviews.length === 0) return null;
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const review of reviews) {
+    const w = timeWeight(review.at, now) * valueWeight(BigInt(review.luna));
+    weightedSum += review.rating * w;
+    weightTotal += w;
+  }
+  // A review can only exist on a settled chit, and settlement itself refuses a zero-Luna
+  // payment (97% of nothing is nothing) — so every weight really is positive today. The
+  // plain mean stands in as the honest fallback rather than a division by zero, in case that
+  // invariant is ever the one that breaks first.
+  if (weightTotal === 0) return reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+  return weightedSum / weightTotal;
+}
+
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((x, y) => x - y);
@@ -153,6 +209,13 @@ export interface Profile {
   reviews: ProfileReview[];
   /** The mean of those ratings, or null when there are none. Never rounded away from the truth. */
   averageRating: number | null;
+  /**
+   * The same reviews, time-decayed and value-weighted — see `weightedRating`. Shown beside
+   * the plain mean, never instead of it: the two agree closely on an established record and
+   * diverge exactly when the divergence is the useful part (an old rating still dragging the
+   * mean up, or one large job saying more than three small ones).
+   */
+  weightedRating: number | null;
   /** Settled work this address was paid for, newest first. */
   work: ProfileWork[];
 }
@@ -168,6 +231,8 @@ export interface ProfileReview {
   txHash: string;
   at: number;
   signature: { publicKeyHex: string; signatureHex: string };
+  /** What the chit this review is bound to actually settled for — the weighted score's input. */
+  luna: string;
 }
 
 export interface ProfileWork {
@@ -218,6 +283,7 @@ export function profile(address: string, chits: StoredChit[], currentBlock: numb
         txHash: review.txHash,
         at: review.at,
         signature: review.signature,
+        luna: (stored.settledLuna ?? stored.chit.luna).toString(10),
       });
     }
 
@@ -242,7 +308,7 @@ export function profile(address: string, chits: StoredChit[], currentBlock: numb
     ? null
     : reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
 
-  return { address, ledger: ledger(address, chits, currentBlock), since, reviews, averageRating, work };
+  return { address, ledger: ledger(address, chits, currentBlock), since, reviews, averageRating, weightedRating: weightedRating(reviews), work };
 }
 
 /** The wire form for a profile. JSON has no bigint, and the ledger carries two. */
@@ -252,6 +318,7 @@ export function presentProfile(record: Profile): {
   since: number | null;
   reviews: ProfileReview[];
   averageRating: number | null;
+  weightedRating: number | null;
   work: ProfileWork[];
 } {
   return {
@@ -260,6 +327,7 @@ export function presentProfile(record: Profile): {
     since: record.since,
     reviews: record.reviews,
     averageRating: record.averageRating,
+    weightedRating: record.weightedRating,
     work: record.work,
   };
 }

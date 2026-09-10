@@ -401,6 +401,8 @@ export interface ProfileView {
   since: number | null;
   reviews: Array<ApiReview & { chitId: string; chitText: string }>;
   averageRating: number | null;
+  /** The same reviews, time-decayed and value-weighted. Shown beside the plain mean, never instead of it. */
+  weightedRating: number | null;
   work: Array<{
     chitId: string;
     text: string;
