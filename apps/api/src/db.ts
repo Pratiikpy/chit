@@ -445,6 +445,9 @@ export class ChitStore {
       if (!cols.includes(col)) this.#db.exec(`ALTER TABLE chits ADD COLUMN ${col} TEXT`);
     }
     if (!cols.includes('declined_at')) this.#db.exec('ALTER TABLE chits ADD COLUMN declined_at INTEGER');
+    // After the migration above, never in SCHEMA: `parent` does not exist on a database that
+    // has not run it yet, fresh or otherwise, since the column is not in the base CREATE TABLE.
+    this.#db.exec('CREATE INDEX IF NOT EXISTS idx_chits_parent ON chits(parent)');
   }
 
   close(): void {
@@ -657,6 +660,18 @@ export class ChitStore {
          ORDER BY created_at DESC LIMIT ?`,
       )
       .all(key, key, key, key, limit) as ChitRow[];
+    return rows.map(rowToStored);
+  }
+
+  /**
+   * Every chit that answers this one — a counter-offer, a revision, a cancel, or the next
+   * chit in a staged series — oldest first, so a series reads in the order it happened.
+   *
+   * `parent` is metadata, not signed text (see `CreateChitInput.parent`), so this is a plain
+   * indexed lookup rather than anything that touches a digest.
+   */
+  children(id: string): StoredChit[] {
+    const rows = this.#db.prepare('SELECT * FROM chits WHERE parent = ? ORDER BY created_at ASC').all(id) as ChitRow[];
     return rows.map(rowToStored);
   }
 

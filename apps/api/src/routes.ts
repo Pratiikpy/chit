@@ -969,6 +969,18 @@ export function createRoutes(options: RouteOptions) {
   });
 
   /**
+   * Every chit that answers this one, oldest first — a counter-offer, a revision, a cancel,
+   * or the next chit in a staged series. Public for the same reason the chit itself is: a
+   * stranger checking a receipt should be able to see the whole series it belongs to.
+   */
+  app.get('/api/chits/:id/children', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    const children = await store.children(stored.id);
+    return c.json({ children: children.map((child) => present(child, baseUrl, flags)) });
+  });
+
+  /**
    * "Here it is" — the state between signing and being paid.
    *
    * Signed by the party who will be paid, over a canonical form of its own (`@chit/core`

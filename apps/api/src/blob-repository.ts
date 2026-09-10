@@ -315,6 +315,9 @@ export class BlobRepository implements ChitRepository {
     if (input.chit.payee) {
       await this.#write(`addr/${addrKey(input.chit.payee)}/${keyFor(input.id)}.json`, { id: input.id });
     }
+    if (input.parent) {
+      await this.#write(`children/${keyFor(input.parent)}/${keyFor(input.id)}.json`, { id: input.id });
+    }
     return { created: true, chit: stored };
   }
 
@@ -406,6 +409,27 @@ export class BlobRepository implements ChitRepository {
       .flatMap((entry) => (entry ? [entry.stored] : []))
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, limit);
+  }
+
+  /**
+   * Every chit that answers this one, oldest first — the object-store half of the same
+   * `children/<parent>/<child>.json` pointer `create` writes, on the same seam as `addr/`.
+   */
+  async children(id: string): Promise<StoredChit[]> {
+    const prefix = `children/${keyFor(id)}/`;
+    const keys: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}), ...this.#opts });
+      for (const blob of page.blobs) {
+        const key = blob.pathname.slice(prefix.length).replace(/\.json$/, '');
+        if (key) keys.push(key);
+      }
+      cursor = page.cursor;
+    } while (cursor);
+
+    const loaded = await Promise.all(keys.map((key) => this.#load(`chit1:${key}`)));
+    return loaded.flatMap((entry) => (entry ? [entry.stored] : [])).sort((a, b) => a.createdAt - b.createdAt);
   }
 
   /**

@@ -59,6 +59,9 @@ export interface ChitRepository {
    */
   boardInputs(currentBlock: number, limit?: number): Promise<StoredChit[]>;
 
+  /** Every chit that answers this one — a counter-offer, a revision, a cancel, or the next chit in a staged series — oldest first. */
+  children(id: string): Promise<StoredChit[]>;
+
   /**
    * Questions asked about a chit before anybody committed, and their one answer.
    *
@@ -138,6 +141,10 @@ export class SqliteRepository implements ChitRepository {
 
   async boardInputs(currentBlock: number, limit = 500) {
     return this.store.boardInputs(currentBlock, limit);
+  }
+
+  async children(id: string) {
+    return this.store.children(id);
   }
 
   async addQuestion(question: StoredQuestion) {

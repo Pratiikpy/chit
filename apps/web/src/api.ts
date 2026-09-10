@@ -279,6 +279,11 @@ export const api = {
     return request<{ questions: ApiQuestion[] }>(`/api/chits/${encodeURIComponent(id)}/questions`);
   },
 
+  /** Every chit that answers this one, oldest first: a counter-offer, a revision, or the next phase of a staged job. */
+  children(id: string) {
+    return request<{ children: ApiChit[] }>(`/api/chits/${encodeURIComponent(id)}/children`);
+  },
+
   /** Ask one, signed, before committing to anything. */
   ask(id: string, signature: { publicKeyHex: string; signatureHex: string }, nonce: string, text: string) {
     return request<{ questions: ApiQuestion[] }>(`/api/chits/${encodeURIComponent(id)}/questions`, {

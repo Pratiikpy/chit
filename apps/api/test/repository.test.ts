@@ -59,7 +59,7 @@ async function eventually(check: () => Promise<boolean>, what: string, attempts 
 const sig = (tag: string) => ({ publicKeyHex: tag.repeat(64).slice(0, 64), signatureHex: tag.repeat(128).slice(0, 128) });
 
 /** The behaviour every backend owes the routes, expressed once. */
-async function conformsToTheContract(repo: ChitRepository, label: string): Promise<{ id: string; txHash: string }> {
+async function conformsToTheContract(repo: ChitRepository, label: string): Promise<{ id: string; txHash: string; childId: string }> {
   const chit = makeChit();
   const canonical = canonicalise(chit);
   const id = chitHash(chit);
@@ -129,11 +129,27 @@ async function conformsToTheContract(repo: ChitRepository, label: string): Promi
   await eventually(async () => (await repo.forAddress(PAYER)).some((c) => c.id === id), `${label}: the payer sees it`);
   await eventually(async () => (await repo.forAddress(WORKER)).some((c) => c.id === id), `${label}: the worker sees it`);
 
+  // --- children -------------------------------------------------------------
+  // A counter-offer, a revision, a cancel, or the next chit in a staged series: all the same
+  // shape, a chit whose `parent` names the one it answers. Metadata, not signed text — the
+  // canonical form and the digest above are untouched by it.
+  const child = makeChit();
+  const childCanonical = canonicalise(child);
+  const childId = chitHash(child);
+  await repo.create({ id: childId, canonical: childCanonical, chit: child, payerSignature: sig('d'), parent: id });
+  assert.deepEqual(
+    (await repo.children(id)).map((c) => c.id),
+    [childId],
+    `${label}: the parent finds its child`,
+  );
+  assert.deepEqual(await repo.children(childId), [], `${label}: a chit with no answer has none`);
+
   // --- absent things ------------------------------------------------------
   assert.equal(await repo.get('chit1:nope'), undefined, `${label}: an unknown id is undefined, not a throw`);
   assert.equal(await repo.byTransaction('0xnope'), undefined, `${label}: an unknown transaction likewise`);
   assert.deepEqual(await repo.events('chit1:nope'), [], `${label}: history of nothing is empty`);
-  return { id, txHash: tx.hash };
+  assert.deepEqual(await repo.children('chit1:nope'), [], `${label}: children of nothing is empty`);
+  return { id, txHash: tx.hash, childId };
 }
 
 test('SQLite satisfies the storage contract', async () => {
@@ -146,11 +162,12 @@ const blobToken = process.env['BLOB_READ_WRITE_TOKEN'];
 
 test('Vercel Blob satisfies the same storage contract', { skip: blobToken ? false : 'BLOB_READ_WRITE_TOKEN not set — the serverless backend was NOT exercised' }, async () => {
   // Deliberately the real store over the network. A mock here would only prove the mock.
-  const { id, txHash } = await conformsToTheContract(new BlobRepository(blobToken), 'blob');
+  const { id, txHash, childId } = await conformsToTheContract(new BlobRepository(blobToken), 'blob');
 
   // The real store is the production store. Leave it exactly as it was found: a synthetic
   // address with ten "settled" chits is what a ledger read returned before this existed.
   const key = id.replace(/^chit1:/, '');
+  const childKey = childId.replace(/^chit1:/, '');
   const addr = (a: string) => a.replace(/\s+/g, '').toUpperCase();
   await del(
     [
@@ -159,6 +176,10 @@ test('Vercel Blob satisfies the same storage contract', { skip: blobToken ? fals
       `tx/${txHash}.json`,
       `addr/${addr(PAYER)}/${key}.json`,
       `addr/${addr(WORKER)}/${key}.json`,
+      `chits/${childKey}.json`,
+      `open/${childKey}.json`,
+      `addr/${addr(PAYER)}/${childKey}.json`,
+      `children/${key}/${childKey}.json`,
     ],
     { token: blobToken as string },
   ).catch(() => {

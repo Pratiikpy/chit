@@ -605,6 +605,11 @@ const fr: Dict = {
   'Bounty answered': 'Prime réclamée',
   'Bounty paid': 'Prime payée',
   'Bounty payout failed': 'Le versement de la prime a échoué',
+
+  /* ---- the rest of the series, on the settled screen ---- */
+  'Part of a series': 'Fait partie d\'une série',
+  'See what this answers': 'Voir à quoi cela répond',
+  'What came after': 'Ce qui est venu après',
 };
 
 export default fr;

@@ -605,6 +605,11 @@ const es: Dict = {
   'Bounty answered': 'Recompensa respondida',
   'Bounty paid': 'Recompensa pagada',
   'Bounty payout failed': 'El pago de la recompensa falló',
+
+  /* ---- the rest of the series, on the settled screen ---- */
+  'Part of a series': 'Parte de una serie',
+  'See what this answers': 'Ver a qué responde esto',
+  'What came after': 'Lo que vino después',
 };
 
 export default es;

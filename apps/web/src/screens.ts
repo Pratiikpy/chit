@@ -2528,6 +2528,53 @@ function showcasePanel(chit: ApiChit, isPayer: boolean, isWorker: boolean): HTML
 }
 
 /**
+ * The rest of the same job: what this chit answers, and what has answered it — a counter-
+ * offer, a revision, or the next phase of a staged series, all sharing the one link `parent`
+ * always was. Metadata, never signed text, so it is safe to show before anyone has committed
+ * to anything on either side.
+ */
+function seriesPanel(chit: ApiChit, navigate: Navigate): HTMLElement {
+  const box = el('div', { class: 'stack stack--tight' });
+
+  if (chit.parent) {
+    const parentId = chit.parent;
+    box.append(
+      el('div', {
+        class: 'card',
+        children: [el('div', { class: 'small secondary', text: t('Part of a series') }), button(t('See what this answers'), () => navigate(chitPath(parentId)), 'quiet', 'arrow-right')],
+      }),
+    );
+  }
+
+  void (async () => {
+    try {
+      const result = await api.children(chit.id);
+      if (!result.ok || result.value.children.length === 0) return;
+      box.append(el('h2', { class: 'section', text: t('What came after') }));
+      for (const next of result.value.children) {
+        const row = el('button', {
+          class: 'list__item',
+          attrs: { type: 'button' },
+          children: [
+            el('div', {
+              class: 'list__main',
+              children: [el('div', { class: 'list__text', text: next.chit.text }), el('div', { class: 'list__meta', text: formatDate(next.createdAt) })],
+            }),
+            el('div', { class: 'list__side', children: [el('div', { class: 'list__amount', text: fiat(next) })] }),
+          ],
+        });
+        row.addEventListener('click', () => navigate(chitPath(next.id)));
+        box.append(row);
+      }
+    } catch {
+      // Nothing useful to say about a failed read of a purely supplementary list.
+    }
+  })();
+
+  return box;
+}
+
+/**
  * The same words the server already records for settlement and expiry — questioned,
  * answered, showcased, signed, paid — read as a sentence instead of a database row.
  * Unrecognised event names still print (as themselves) rather than vanish, since a future
@@ -2656,6 +2703,9 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
         reviewPanel(chit, navigate, isPayer || isWorker),
         // After the review, because a piece is what somebody does with a job that went well.
         showcasePanel(chit, isPayer, isWorker),
+        // Before the collapsed history: unlike the full log, a next phase to jump to is
+        // something most people want to see, not just the one time in ten who go looking.
+        seriesPanel(chit, navigate),
         // Collapsed, last: the receipt already answers "what do I hold", this is for the one
         // time in ten somebody asks "how did we get here".
         timelinePanel(chit),
