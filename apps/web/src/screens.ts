@@ -42,6 +42,7 @@ import { readChainTransaction } from './chain.ts';
 import { identicon } from './identicon.ts';
 import { labelFor, setLabel } from './labels.ts';
 import { hasIdentity, readIdentity, writeIdentity, type Identity } from './identity.ts';
+import { saveInvoicePdf } from './invoice-pdf.ts';
 import {
   button,
   copyable,
@@ -2742,7 +2743,21 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
   const me = rememberedAddress();
   const dir = isWorker ? 'earning' : 'paying';
   const again = button(t('Same again'), () => navigate(`/?dir=${dir}&text=${encodeURIComponent(chit.chit.text)}`), 'quiet', 'pen');
-  const print = button(t('Print / save as PDF'), () => window.print(), 'plain', 'print');
+  const pdfMessages = el('div', { class: 'stack stack--tight' });
+  /*
+   * Not `window.print()`. It does not work inside an embedded WebView — confirmed against a
+   * tracked Chromium defect and react-native-webview's own maintainers, with no evidence of
+   * iOS WKWebView support either — and Nimiq Pay's embedded WebView is the only way a real
+   * user ever opens this screen. A button that quietly does nothing on every real phone is
+   * worse than no button, so this generates a real PDF on the device instead.
+   */
+  const pdf = button(t('Download PDF'), () => void downloadPdf(), 'plain', 'print');
+  async function downloadPdf(): Promise<void> {
+    await withBusy(pdf, t('Preparing the PDF…'), async () => {
+      const result = await saveInvoicePdf(chit, readIdentity(), isWorker);
+      if (!result.ok) pdfMessages.append(note(result.error, 'warn'));
+    });
+  }
   const link = receiptLink(chit);
   /*
    * What comes after a settled chit. A half-up-front chit gets its other half, at the same
@@ -2778,7 +2793,7 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
     record,
     nextStep,
     again,
-    el('div', { class: 'row-actions', children: [print, button(t('Start another'), () => navigate('/'), 'plain')] }),
+    el('div', { class: 'row-actions', children: [pdf, button(t('Start another'), () => navigate('/'), 'plain')] }),
   ];
   mount(
     screen({
@@ -2809,6 +2824,7 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
         timelinePanel(chit),
         isWorker ? identityPanel(() => settledScreen(chit, navigate, isPayer, isWorker)) : null,
         isWorker ? cashOutHelp() : null,
+        pdfMessages,
       ],
       actions: actions.filter((node): node is HTMLElement => node !== null),
     }),

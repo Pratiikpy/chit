@@ -290,7 +290,6 @@ const pt: Dict = {
   'Tax line, if your country needs one': 'Linha fiscal, se o seu país exigir',
   'e.g. VAT exempt under §19 UStG': 'ex.: Optante pelo Simples Nacional',
   'Save on this device': 'Salvar neste aparelho',
-  'Print / save as PDF': 'Imprimir / salvar em PDF',
   'Start another': 'Criar outro',
   Deliverables: 'Entregas',
   Due: 'Prazo',
@@ -624,6 +623,15 @@ const pt: Dict = {
   'That is a real amount of extra work. A paid round is a fair way to ask for one.': 'Isso é bastante trabalho extra. Uma ronda paga é uma forma justa de a pedir.',
   'Propose a paid revision': 'Propor uma revisão paga',
   'Additional revision beyond what was agreed': 'Revisão adicional além do que foi acordado',
+
+  /* ---- a real PDF, since window.print() does not work inside the WebView ---- */
+  'Download PDF': 'Transferir PDF',
+  'Preparing the PDF…': 'A preparar o PDF…',
+  'Could not build the PDF. Nothing was sent anywhere — try again.': 'Não foi possível criar o PDF. Não foi enviado nada — tenta novamente.',
+  'Your browser blocked the new tab. Allow pop-ups for this page and try again.': 'O teu navegador bloqueou o novo separador. Permite pop-ups para esta página e tenta novamente.',
+  'Could not open the PDF. Nothing was sent anywhere — try again.': 'Não foi possível abrir o PDF. Não foi enviado nada — tenta novamente.',
+  'Settled in NIM on the Nimiq blockchain. Anyone can verify this transaction against the reference above, with no account.': 'Liquidado em NIM na blockchain da Nimiq. Qualquer pessoa pode verificar esta transação com a referência acima, sem conta.',
+  'Settled in NIM on the Nimiq blockchain. This document was generated on your device; chit never saw the details above the line.': 'Liquidado em NIM na blockchain da Nimiq. Este documento foi gerado no teu dispositivo; o chit nunca viu os dados acima desta linha.',
 };
 
 export default pt;

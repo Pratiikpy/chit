@@ -266,7 +266,6 @@ const de: Dict = {
   'Tax line, if your country needs one': 'Steuerzeile, falls dein Land eine braucht',
   'e.g. VAT exempt under §19 UStG': 'z. B. Kein Ausweis von Umsatzsteuer gemäß § 19 UStG',
   'Save on this device': 'Auf diesem Gerät speichern',
-  'Print / save as PDF': 'Drucken / als PDF sichern',
   'Start another': 'Neuen starten',
   Deliverables: 'Lieferungen',
   Due: 'Fällig',
@@ -584,6 +583,15 @@ const de: Dict = {
   'That is a real amount of extra work. A paid round is a fair way to ask for one.': 'Das ist eine echte Menge zusätzlicher Arbeit. Eine bezahlte Runde ist ein fairer Weg, danach zu fragen.',
   'Propose a paid revision': 'Eine bezahlte Überarbeitung vorschlagen',
   'Additional revision beyond what was agreed': 'Zusätzliche Überarbeitung über das Vereinbarte hinaus',
+
+  /* ---- a real PDF, since window.print() does not work inside the WebView ---- */
+  'Download PDF': 'PDF herunterladen',
+  'Preparing the PDF…': 'PDF wird vorbereitet …',
+  'Could not build the PDF. Nothing was sent anywhere — try again.': 'Das PDF konnte nicht erstellt werden. Es wurde nichts gesendet — versuch es noch einmal.',
+  'Your browser blocked the new tab. Allow pop-ups for this page and try again.': 'Dein Browser hat den neuen Tab blockiert. Erlaube Pop-ups für diese Seite und versuch es noch einmal.',
+  'Could not open the PDF. Nothing was sent anywhere — try again.': 'Das PDF konnte nicht geöffnet werden. Es wurde nichts gesendet — versuch es noch einmal.',
+  'Settled in NIM on the Nimiq blockchain. Anyone can verify this transaction against the reference above, with no account.': 'Abgewickelt in NIM auf der Nimiq-Blockchain. Jeder kann diese Transaktion anhand der obigen Referenz prüfen, ohne Konto.',
+  'Settled in NIM on the Nimiq blockchain. This document was generated on your device; chit never saw the details above the line.': 'Abgewickelt in NIM auf der Nimiq-Blockchain. Dieses Dokument wurde auf deinem Gerät erstellt; chit hat die Angaben über dieser Zeile nie gesehen.',
 };
 
 export default de;
