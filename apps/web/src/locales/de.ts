@@ -548,6 +548,24 @@ const de: Dict = {
   'Put it on your public record, with the payment beside it as proof somebody paid for it. Your client has to agree first.': 'Stell sie auf deine öffentliche Seite, mit der Zahlung daneben als Beleg, dass jemand dafür bezahlt hat. Dein Kunde muss vorher zustimmen.',
   'Each piece was paid for, and the client agreed to it being shown.': 'Jede Arbeit wurde bezahlt, und der Kunde hat dem Zeigen zugestimmt.',
   'Offer a different deal': 'Ein anderes Angebot machen',
+
+  /* ---- full history, on the settled screen ---- */
+  'Full history': 'Vollständiger Verlauf',
+  Sent: 'Gesendet',
+  'A question was asked': 'Es wurde eine Frage gestellt',
+  'The question was answered': 'Die Frage wurde beantwortet',
+  'Offered as a portfolio piece': 'Als Arbeitsprobe angeboten',
+  'Shown as a portfolio piece': 'Als Arbeitsprobe gezeigt',
+  Signed: 'Unterschrieben',
+  'Passed its deadline': 'Frist abgelaufen',
+  'A payment arrived that did not match': 'Eine Zahlung kam an, die nicht passte',
+  'Answered with a new chit': 'Mit einem neuen Chit beantwortet',
+  'Marked delivered': 'Als geliefert markiert',
+  Reviewed: 'Bewertet',
+  'Bounty opened': 'Bounty eröffnet',
+  'Bounty answered': 'Bounty beantwortet',
+  'Bounty paid': 'Bounty ausgezahlt',
+  'Bounty payout failed': 'Bounty-Auszahlung fehlgeschlagen',
 };
 
 export default de;

@@ -2527,6 +2527,72 @@ function showcasePanel(chit: ApiChit, isPayer: boolean, isWorker: boolean): HTML
   return box;
 }
 
+/**
+ * The same words the server already records for settlement and expiry — questioned,
+ * answered, showcased, signed, paid — read as a sentence instead of a database row.
+ * Unrecognised event names still print (as themselves) rather than vanish, since a future
+ * event type should never make old history unreadable.
+ */
+function timelineLabel(event: string): string {
+  switch (event) {
+    case 'created':
+      return t('Sent');
+    case 'questioned':
+      return t('A question was asked');
+    case 'answered-question':
+      return t('The question was answered');
+    case 'showcase-proposed':
+      return t('Offered as a portfolio piece');
+    case 'showcase-agreed':
+      return t('Shown as a portfolio piece');
+    case 'countersigned':
+      return t('Signed');
+    case 'settled':
+      return t('Paid');
+    case 'expired':
+      return t('Passed its deadline');
+    case 'declined':
+      return t('Declined');
+    case 'settlement-mismatch':
+      return t('A payment arrived that did not match');
+    case 'answered':
+      return t('Answered with a new chit');
+    case 'delivered':
+      return t('Marked delivered');
+    case 'reviewed':
+      return t('Reviewed');
+    case 'bounty-posted':
+      return t('Bounty opened');
+    case 'bounty-claimed':
+      return t('Bounty answered');
+    case 'bounty-paid':
+      return t('Bounty paid');
+    case 'bounty-payout-failed':
+      return t('Bounty payout failed');
+    default:
+      return event;
+  }
+}
+
+/**
+ * Full history, collapsed by default: the receipt above already answers "what do I hold",
+ * this answers "how did we get here" for the one time in ten somebody asks.
+ */
+function timelinePanel(chit: ApiChit): HTMLElement | null {
+  const events = chit.events;
+  if (!events || events.length === 0) return null;
+  const rows = events
+    .slice()
+    .sort((a, b) => a.at - b.at)
+    .map((e) =>
+      el('div', {
+        class: 'list__main',
+        children: [el('div', { class: 'list__text', text: timelineLabel(e.event) }), el('div', { class: 'list__meta', text: formatDate(e.at) })],
+      }),
+    );
+  return details(t('Full history'), rows);
+}
+
 function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWorker: boolean): void {
   const me = rememberedAddress();
   const dir = isWorker ? 'earning' : 'paying';
@@ -2590,6 +2656,9 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
         reviewPanel(chit, navigate, isPayer || isWorker),
         // After the review, because a piece is what somebody does with a job that went well.
         showcasePanel(chit, isPayer, isWorker),
+        // Collapsed, last: the receipt already answers "what do I hold", this is for the one
+        // time in ten somebody asks "how did we get here".
+        timelinePanel(chit),
         isWorker ? identityPanel(() => settledScreen(chit, navigate, isPayer, isWorker)) : null,
         isWorker ? cashOutHelp() : null,
       ],
