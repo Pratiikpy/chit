@@ -231,14 +231,14 @@ Nothing below is a claim about intent; each is a command.
 
 ```bash
 npm install
-npm test          # core 124 · verify 22 · api 171 (+1 needs a blob token) · web 48
+npm test          # core 124 · verify 22 · api 182 (+1 needs a blob token) · web 49
 npm run typecheck # four packages, strict, exactOptionalPropertyTypes
 npm run build
 ```
 
 ```bash
 # Two people, two browsers, two real Ed25519 keys, the whole product end to end.
-# 252 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
+# 259 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
 node --experimental-strip-types scripts/user-journey.mjs
 
 # The live deployment, in a real browser. 21 checks.
@@ -431,25 +431,29 @@ Honest limits. Everything here needs a physical device or funds.
 - **The Android file picker and camera**, host-gated.
 - **Getting the generated invoice PDF onto the device, inside Nimiq Pay specifically.** The
   PDF itself is built and verified — real bytes, the correct magic header, checked by reading
-  the rendered layout back. Handing those bytes to the phone is the part still unverified on
-  a real device — but two real WebView defects in the *first* version of that path were found
-  by research and corrected before either shipped further: `window.open()` on a `blob:` URL,
-  the original fallback, fails twice over inside Android's WebView — new-window creation is
-  silently ignored unless the host app implements `onCreateWindow`, the same "needs a host
-  bridge" shape `window.print()` already has, and separately a `blob:` URL cannot be resolved
-  inside the WebView at all, since it is scoped to the process that created it and an embedded
-  WebView is not that process (`developer.android.com/develop/ui/views/layout/webapps/webview`;
-  matching reports at `techblogs.42gears.com` and the `react-native-webview` issue tracker).
-  The fallback is now a same-window navigation to a self-contained base64 `data:` URI, which
-  needs neither a host bridge nor blob resolution. `navigator.share` itself is tried first and
-  is genuinely harmless to attempt: where the host has not bridged it, it is `undefined`
-  rather than a function that exists and fails, confirmed against the same issue tracker, so
-  chit's existing `typeof nav.share === 'function'` guard already falls through correctly with
-  no wasted call. What remains unseen on a real phone is only the corrected `data:` URI path
-  itself. Three real paths to a device were checked before settling for research instead: the
-  iOS Simulator (`xcrun`, absent — this machine has no Xcode), an Android emulator (no SDK, no
-  `adb`, nothing under the usual install paths), and a cloud device farm (none configured
-  here).
+  the rendered layout back. Handing those bytes to the phone took three attempts, and the
+  first two are worth recording rather than quietly overwriting: `window.open()` on a `blob:`
+  URL fails twice over inside Android's WebView — new-window creation is silently ignored
+  unless the host app implements `onCreateWindow`, the same "needs a host bridge" shape
+  `window.print()` already has, and separately a `blob:` URL cannot be resolved inside the
+  WebView at all, since it is scoped to the process that created it. The next attempt,
+  `window.location.href` to a self-contained base64 `data:` URI, reasoned correctly about
+  both of those failures and was still wrong: confirmed directly against real headless
+  Chromium (not inferred), Chrome blocks a top-level navigation to a `data:` URI outright,
+  synchronous click handler or not. What actually works, confirmed the same way: an
+  `<a download>` built and clicked in script — not a navigation at all, so neither block
+  applies, and its own end-to-end journey now asserts a real download event fires with the
+  right bytes, not merely that nothing threw. `navigator.share` is still tried first and is
+  genuinely harmless to attempt: where the host has not bridged it, it is `undefined` rather
+  than a function that exists and fails, so chit's `typeof nav.share === 'function'` guard
+  falls through with no wasted call. What remains unseen on a real phone: whether Android's
+  WebView honours `<a download>` on a `data:` URI the same way desktop Chromium just proved
+  it does — this shape resembles what the CSV export deliberately avoided ("a script-triggered
+  download is not reliably honoured inside a WebView"), but that lesson was specifically about
+  a `blob:` URL, the one failure mode this does not share. Three real paths to a device were
+  checked before settling for research instead: the iOS Simulator (`xcrun`, absent — this
+  machine has no Xcode), an Android emulator (no SDK, no `adb`, nothing under the usual
+  install paths), and a cloud device farm (none configured here).
 - **The Spanish, French and Portuguese copy has not been read by a native speaker.** It is complete, tested for missing keys, stale keys, dropped placeholders and untranslated leftovers, and written rather than machine-generated — but that is not the same as reviewed.
 - **Arc mainnet.** Every reference found was testnet, which is why the word *escrow* appears
   nowhere in the product.
