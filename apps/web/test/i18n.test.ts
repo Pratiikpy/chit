@@ -106,6 +106,31 @@ test('no translation is left as its English original', async () => {
   await initLanguage('en');
 });
 
+test('⭐ no user-facing sentence overpromises a protection chit does not have', () => {
+  /*
+   * chit's one unbreakable promise is "we never hold money" (README, "Why it exists"). Pact —
+   * a Cycle 2 app in the same shape — enforces its own version of this with a build-time word
+   * check; this is chit's. Each word below, said to somebody about to sign or pay, promises a
+   * protection the product cannot give — and the README says outright that "escrow" appears
+   * nowhere in the product, which was an editorial claim until this made it a checked one.
+   */
+  const BANNED: RegExp[] = [
+    /escrow/i,
+    /\bguarantees?\b/i,
+    /\binsured\b/i,
+    /funds are held/i,
+    /we hold (your |the )?money/i,
+    /your money is safe/i,
+    /\brefundable\b/i,
+  ];
+  // Sentences allowed to contain one of the words above because they exist to deny it.
+  const ALLOWED = new Set([
+    'Protect you. This is proof of payment, not escrow or a dispute service. Use it with clients you already talk to directly.',
+  ]);
+  const offending = [...keysUsed()].filter((key) => !ALLOWED.has(key) && BANNED.some((re) => re.test(key)));
+  assert.deepEqual(offending, []);
+});
+
 test('an unknown language falls back to English, never to a key', async () => {
   assert.equal(await initLanguage('xx'), 'en');
   assert.equal(currentLanguage(), 'en');
