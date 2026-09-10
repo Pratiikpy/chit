@@ -20,9 +20,9 @@
  *   and their own locale's notation, with the NIM figure beside it rather than hidden.
  */
 
-import { canonicaliseDelivery, canonicaliseReview, chitHash, fromBase64Url, isRecordOnly, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
+import { canonicaliseAnswer, canonicaliseDelivery, canonicaliseQuestion, canonicaliseReview, canonicaliseShowcase, chitHash, fromBase64Url, isRecordOnly, newNonce, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
 import QrCreator from 'qr-creator';
-import { api, type ApiChit, type ApiReview, type LedgerView, type ProfileView } from './api.ts';
+import { api, type ApiChit, type ApiQuestion, type ApiReview, type ApiShowcase, type BoardQuery, type LedgerView, type ProfileView } from './api.ts';
 import { buildDraft, buildRecordChit, BLOCKS_PER_DAY, fieldsFromTerms, isReady, quoteExpired, type DraftFields, type Quote } from './compose.ts';
 import {
   checkNetwork,
@@ -191,7 +191,7 @@ function nimRound(luna: string): string {
 /* ------------------------------------------------------------------ shared pieces */
 
 /** The word "chit", and the ways around. Sits above the title. */
-function topBar(navigate: Navigate, current?: 'compose' | 'activity' | 'bounty' | 'about'): HTMLElement {
+function topBar(navigate: Navigate, current?: 'compose' | 'activity' | 'bounty' | 'about' | 'board'): HTMLElement {
   const me = rememberedAddress();
   const brand = el('button', { class: 'topbar__brand', text: 'chit', attrs: { type: 'button', 'aria-label': t('chit home') } });
   brand.addEventListener('click', () => navigate('/'));
@@ -201,6 +201,10 @@ function topBar(navigate: Navigate, current?: 'compose' | 'activity' | 'bounty' 
     b.addEventListener('click', () => navigate(path));
     nav.append(b);
   };
+  // The board is first and unconditional. It is the only route for somebody who arrived without
+  // a link, which is every stranger — and a marketplace whose front door depends on already having
+  // a wallet is the shape that got a Cycle 1 entry retired.
+  if (current !== 'board') link(t('Board'), 'search', '/board');
   if (me && current !== 'activity') link(t('Activity'), 'clock', `/a/${encodeURIComponent(me)}`);
   if (current === 'compose') link(t('About'), 'info', '/about');
   else link(t('New chit'), 'pen', '/');
@@ -1008,6 +1012,246 @@ function bountyScreen(chit: ApiChit, detection: WalletDetection, navigate: Navig
 }
 
 /** The pool, in public: address, balance, rules, open bounties, every payout with its transaction. */
+/**
+ * The board — the screen a stranger opens when they have no counterparty.
+ *
+ * Until this screen a chit was a link you sent to somebody you already knew, which made the whole
+ * product useless to exactly the person it was built for: a freelancer with no client. Everything
+ * shown here already existed as an object and simply had nowhere to be seen.
+ *
+ * Three decisions worth stating, because each was a choice rather than a default:
+ *
+ * 1. **Both sides of the market, one list.** Work looking for a worker and a worker looking for work
+ *    are the same object with the money on the other side, so they are one list with a filter rather
+ *    than two screens. A market split across two screens makes every visitor guess which one they
+ *    are, and half of them guess wrong.
+ * 2. **The money is the largest thing on a row**, as it is on every other chit screen. Somebody
+ *    scanning a board is answering "is this worth my afternoon", and everything else is secondary to
+ *    the number.
+ * 3. **Why it ranks is printed on the row.** Not buried, not a tooltip. A worker who cannot see why
+ *    they are where they are has no way to tell a fair board from a rigged one, and ranking people
+ *    in secret is the thing our own research says freelancers resent most about the incumbents.
+ */
+export async function boardScreen(navigate: Navigate, initial: BoardQuery = {}): Promise<void> {
+  let query: BoardQuery = { ...initial };
+
+  const render = async (): Promise<void> => {
+    const settle = loadingSoon(() => skeletonScreen(navigate));
+    const result = await api.board(query);
+    settle();
+
+    if (!result.ok) {
+      mount(
+        problemScreen(navigate, {
+          title: t('Board'),
+          /*
+           * An unreadable chain gets its own sentence. Without a height the server cannot tell open
+           * work from expired work, and sending somebody to spend an afternoon on a job that closed
+           * yesterday is the worst thing this screen could do — so it says why it is empty rather
+           * than looking broken.
+           */
+          text:
+            result.code === 'no-chain'
+              ? t('We could not read the chain just now, so we cannot say which chits are still open. Try again in a moment.')
+              : result.error,
+          glyph: 'search',
+          tone: result.code === 'no-chain' ? 'calm' : 'bad',
+          actions: [button(t('Try again'), () => void render()), button(t('New chit'), () => navigate('/'))],
+        }),
+      );
+      return;
+    }
+
+    const view = result.value;
+
+    /* ---------------------------------------------------------------- searching */
+
+    const search = el('input', {
+      class: 'field__input',
+      attrs: {
+        type: 'search',
+        inputmode: 'search',
+        placeholder: t('logo, translation, video…'),
+        'aria-label': t('Search the board'),
+        enterkeyhint: 'search',
+      },
+    }) as HTMLInputElement;
+    search.value = query.q ?? '';
+
+    /*
+     * Submitted, not typed-through. A request per keystroke is somebody's mobile data, and a list
+     * that reorders under a thumb is a list nobody can read to the end.
+     */
+    const form = el('form', { class: 'board__search' });
+    const go = button(t('Search'), () => undefined, 'inline', 'search');
+    go.setAttribute('type', 'submit');
+    form.append(search, go);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      query = { ...query, q: search.value.trim(), cursor: 0 };
+      void render();
+    });
+
+    /* ---------------------------------------------------------------- filtering */
+
+    const chip = (label: string, active: boolean, pick: () => void): HTMLElement => {
+      // No active class: `.chip[aria-pressed='true']` is already styled, and the attribute is what a
+      // screen reader announces. One source of truth for "this filter is on", not two.
+      const node = el('button', {
+        class: 'chip',
+        text: label,
+        attrs: { type: 'button', 'aria-pressed': active ? 'true' : 'false' },
+      });
+      node.addEventListener('click', () => {
+        pick();
+        void render();
+      });
+      return node;
+    };
+
+    const sides = el('div', {
+      class: 'board__filters',
+      attrs: { role: 'group', 'aria-label': t('Which side of the board') },
+      children: [
+        chip(t('Everything'), !query.kind, () => {
+          // Deleted rather than set to `undefined`: under `exactOptionalPropertyTypes` an explicit
+          // `undefined` is not the same as an absent key, and the API client tests for absence.
+          const { kind: _dropped, ...rest } = query;
+          query = { ...rest, cursor: 0 };
+        }),
+        chip(t('Work'), query.kind === 'work', () => {
+          query = { ...query, kind: 'work', cursor: 0 };
+        }),
+        chip(t('People'), query.kind === 'offer', () => {
+          query = { ...query, kind: 'offer', cursor: 0 };
+        }),
+      ],
+    });
+
+    const sortChoices: ReadonlyArray<readonly [NonNullable<BoardQuery['sort']>, string]> = [
+      ['best', t('Best match')],
+      ['newest', t('Newest')],
+      ['closing', t('Closing soon')],
+      ['highest', t('Highest paid')],
+    ];
+    const sorts = el('div', {
+      class: 'board__filters board__filters--quiet',
+      attrs: { role: 'group', 'aria-label': t('Order') },
+      children: sortChoices.map(([value, label]) =>
+        chip(label, (query.sort ?? 'best') === value, () => {
+          query = { ...query, sort: value, cursor: 0 };
+        }),
+      ),
+    });
+
+    /* ---------------------------------------------------------------- the rows */
+
+    const rows = view.entries.map((entry) => {
+      const c = entry.chit;
+      const days = Math.max(0, Math.round(entry.blocksLeft / BLOCKS_PER_DAY));
+
+      /*
+       * The author's standing, in the words a person would use.
+       *
+       * A rating and a job count are what somebody actually reads on a marketplace row, and every
+       * number here is derived from settled payments rather than asserted by the person it
+       * describes — which is the part Fiverr cannot do and we can.
+       *
+       * A newcomer is labelled, never hidden. Somebody's first chit is usually their first Nimiq
+       * transaction, and a board that quietly buried them would fail the one person this product
+       * exists for — but a client is entitled to know which is which, so it is said plainly. What is
+       * never done is showing a *zero* rating for somebody nobody has rated: zero reads as bad where
+       * the truth is unknown, and inventing a bad first impression is worse than admitting ignorance.
+       */
+      const standing = entry.why.newcomer
+        ? el('span', { class: 'tag tag--new', text: t('New here') })
+        : el('span', {
+            class: 'tag',
+            text:
+              entry.standing.rating === null
+                ? t('{n} done', { n: String(entry.standing.done) })
+                : t('★{rating} · {n} done', {
+                    rating: entry.standing.rating.toFixed(1),
+                    n: String(entry.standing.done),
+                  }),
+          });
+
+      const item = el('button', {
+        class: 'list__item list__item--tap',
+        attrs: { type: 'button' },
+        children: [
+          el('div', {
+            class: 'list__main',
+            children: [
+              el('div', { class: 'list__text list__text--wrap', text: c.chit.text }),
+              el('div', {
+                class: 'list__meta',
+                children: [
+                  el('span', { text: entry.kind === 'work' ? t('Work') : t('Offer') }),
+                  document.createTextNode(' · '),
+                  el('span', { text: days <= 0 ? t('closing today') : t('{n}d left', { n: days }) }),
+                  document.createTextNode(' · '),
+                  standing,
+                ],
+              }),
+            ],
+          }),
+          el('div', {
+            class: 'list__side',
+            children: [el('div', { class: 'list__amount', text: moneyLocal(c.chit.amountMinor, c.chit.currency) })],
+          }),
+        ],
+      });
+      item.addEventListener('click', () => navigate(chitPath(c.id)));
+      return item;
+    });
+
+    const body: HTMLElement[] = [
+      el('p', {
+        class: 'lead',
+        text: t('Work with the money already on it, and people offering theirs. Open one to read the whole agreement before you sign anything.'),
+      }),
+      form,
+      sides,
+      sorts,
+    ];
+
+    if (view.entries.length === 0) {
+      body.push(
+        emptyState({
+          icon: 'search',
+          title: query.q ? t('Nothing matches that.') : t('The board is empty right now.'),
+          text: query.q
+            ? t('Try a shorter word — or post what you need and let somebody come to you.')
+            : t('Post what you need, or what you can do, and it appears here.'),
+        }),
+        button(t('New chit'), () => navigate('/'), 'primary', 'pen'),
+      );
+    } else {
+      body.push(el('div', { class: 'list', children: rows }));
+      body.push(
+        el('p', {
+          class: 'muted small',
+          text: t('{shown} of {total} open', { shown: String(view.entries.length), total: String(view.total) }),
+        }),
+      );
+      if (view.next !== null) {
+        const more = view.next;
+        body.push(
+          button(t('Show more'), () => {
+            query = { ...query, cursor: more };
+            void render();
+          }),
+        );
+      }
+    }
+
+    mount(screen({ header: topBar(navigate, 'board'), title: t('Board'), body }));
+  };
+
+  await render();
+}
+
 export async function bountyBoardScreen(navigate: Navigate): Promise<void> {
   const settle = loadingSoon(() => skeletonScreen(navigate));
   const result = await api.bounty();
@@ -1138,6 +1382,9 @@ function shareScreen(chit: ApiChit, detection: WalletDetection, navigate: Naviga
         state,
         pastDeadline(chit, false),
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me }), dueRow(chit), factRows(chit)] }),
+        // The author's side of the same panel: this is where an unanswered question is answered,
+        // and where it is visible that one is waiting.
+        questionsPanel(chit, navigate, { isAuthor: true }),
         walletBanner(detection, link),
         messages,
         el('div', { class: 'foot', children: [demo] }),
@@ -1175,6 +1422,8 @@ function quoteOwnerScreen(chit: ApiChit, navigate: Navigate): void {
         shareBlock(link),
         state,
         el('div', { class: 'card', children: [party(chit.chit.payee, t('Quoted by'), { me }), dueRow(chit), factRows(chit)] }),
+        // The other side of the same panel: a buyer's question, and the worker's one answer.
+        questionsPanel(chit, navigate, { isAuthor: true }),
       ],
       actions: [...shareActions(link, t('A quote to pay'), chit.chit.text), button(t('Done for now'), () => navigate('/'), 'plain')],
     }),
@@ -1189,6 +1438,25 @@ function acceptQuoteScreen(chit: ApiChit, detection: WalletDetection, navigate: 
   if (detection.tier === 'none') payButton.disabled = true;
   const strip = el('div', { class: 'slot', children: [skeleton('line')] });
   void workerStrip(chit.chit.payee, navigate).then((node) => (node ? strip.replaceChildren(node) : strip.remove()));
+
+  /*
+   * Countering an offer with your own number — the buyer's mirror of "Ask for a change".
+   *
+   * This was the one place chit was *less* flexible than the marketplaces it replaces: a worker
+   * looking at a job could counter, and a buyer looking at an offer could only pay it or leave. It
+   * is also exactly where Fiverr's gig extras live — "I will pay more if you can do it by tomorrow"
+   * — which on Fiverr needs a configured add-on and here is one edited sentence.
+   *
+   * Nothing new: the composer opens in the *paying* direction, pointed back at this quote and
+   * carrying the same words. The worker accepts by signing, as they would any other chit.
+   */
+  const counter = button(
+    t('Offer a different deal'),
+    () => navigate(`/?dir=paying&parent=${encodeURIComponent(chit.id)}&amountMinor=${chit.chit.amountMinor}&text=${encodeURIComponent(chit.chit.text)}`),
+    'quiet',
+    'pen',
+  );
+
   mount(
     screen({
       header: topBar(navigate),
@@ -1200,13 +1468,173 @@ function acceptQuoteScreen(chit: ApiChit, detection: WalletDetection, navigate: 
         el('div', { class: 'card', children: [party(chit.chit.payee, t('Quoted by'), { me, nameable: true }), dueRow(chit), factRows(chit)] }),
         strip,
         el('p', { class: 'small secondary', text: t('Paying this accepts these exact words. The money goes straight to the wallet that signed the quote — nothing is held on the way.') }),
+        // A buyer may ask before paying, exactly as a worker may ask before signing.
+        questionsPanel(chit, navigate, { isAuthor: false }),
         walletBanner(detection, chit.shareUrl),
         noNimHelp(),
         messages,
       ],
-      actions: [payButton, button(t('Not now'), () => navigate('/'), 'plain')],
+      actions: [payButton, counter, button(t('Not now'), () => navigate('/'), 'plain')],
     }),
   );
+}
+
+/**
+ * Questions on an open chit — the one thing a buyer does most, without an inbox to do it in.
+ *
+ * `packages/core/src/question.ts` carries the reasoning. What this function is responsible for is
+ * that the screen never implies more than the object does:
+ *
+ *  - It is **public**, and says so, because somebody about to type is entitled to know that.
+ *  - It is **one** question, and the box goes away once it has been asked.
+ *  - An unanswered question is not a promise. It says nobody has answered *yet* rather than
+ *    leaving a reader to assume silence means no.
+ *
+ * The panel loads its own data rather than being handed it, so a chit screen that has never heard
+ * of questions keeps working exactly as it did.
+ */
+function questionsPanel(chit: ApiChit, navigate: Navigate, options: { isAuthor: boolean }): HTMLElement {
+  const box = el('div', { class: 'stack stack--tight' });
+  const messages = el('div', { class: 'stack stack--tight' });
+
+  const paint = (questions: ApiQuestion[]): void => {
+    /*
+     * Read on every paint, never captured once.
+     *
+     * Somebody arrives at this screen with no wallet connected, connects it *by asking*, and is then
+     * repainted — so an address captured when the panel was built is stale exactly when it matters.
+     * The first version did that and offered the ask box again to somebody who had just used it,
+     * inviting a second question the server would refuse.
+     */
+    const me = rememberedAddress();
+    box.replaceChildren();
+
+    if (questions.length > 0) {
+      box.append(
+        el('h2', { class: 'section', text: t('Questions') }),
+        el('p', { class: 'small secondary', text: t('Asked in public, so the next person does not have to ask again.') }),
+      );
+    }
+
+    for (const question of questions) {
+      const rows: HTMLElement[] = [
+        el('div', { class: 'qa__q', text: question.text }),
+        el('div', { class: 'list__meta', children: [who(question.asker, me), document.createTextNode(` · ${formatDate(question.askedAt)}`)] }),
+      ];
+
+      if (question.answer) {
+        rows.push(el('div', { class: 'qa__a', text: question.answer.text }));
+      } else if (options.isAuthor) {
+        // Only the author is offered the box, because only the author's answer would be real.
+        const words = el('input', {
+          class: 'field',
+          attrs: { type: 'text', maxlength: 400, autocomplete: 'off', 'aria-label': t('Your answer'), placeholder: t('Answer it in one line') },
+        }) as HTMLInputElement;
+        const send = button(t('Answer'), () => void answer(question, words.value.trim(), send), 'quiet', 'pen');
+        send.disabled = true;
+        words.addEventListener('input', () => (send.disabled = words.value.trim().length < 2));
+        rows.push(el('div', { class: 'stack stack--tight', children: [words, send] }));
+      } else {
+        rows.push(el('div', { class: 'small secondary', text: t('Not answered yet.') }));
+      }
+
+      box.append(el('div', { class: 'card qa', children: rows }));
+    }
+
+    // The asking box: only on a chit that is still open, only for somebody who did not write it,
+    // and only once. `already-asked` from the server is the backstop; this is the courtesy.
+    const alreadyAsked = !!me && questions.some((q) => q.asker.replace(/\s/g, '').toUpperCase() === me.replace(/\s/g, '').toUpperCase());
+    if (!options.isAuthor && !alreadyAsked) {
+      const words = el('input', {
+        class: 'field',
+        attrs: { type: 'text', maxlength: 200, autocomplete: 'off', 'aria-label': t('Your question'), placeholder: t('e.g. does this include the source files?') },
+      }) as HTMLInputElement;
+      const send = button(t('Ask in public'), () => void ask(words.value.trim(), send), 'quiet', 'info');
+      send.disabled = true;
+      words.addEventListener('input', () => (send.disabled = words.value.trim().length < 3));
+      box.append(
+        el('div', {
+          class: 'card',
+          children: [
+            el('div', { class: 'small secondary', text: t('Ask before you sign. Everyone can see the question and the answer — including you, later.') }),
+            words,
+            send,
+          ],
+        }),
+      );
+    }
+
+    box.append(messages);
+  };
+
+  /*
+   * Painted empty first, then refreshed.
+   *
+   * A panel that only appears after a network round trip does not appear at all when the round trip
+   * fails — and the ask box is the whole feature. So the box is on the screen from the first frame
+   * and the questions arrive into it, rather than the screen waiting to find out whether there are
+   * any. Found by a journey that saw zero inputs on a screen that should always have had one.
+   */
+  async function reload(): Promise<void> {
+    try {
+      const result = await api.questions(chit.id);
+      if (result.ok) paint(result.value.questions);
+    } catch {
+      // Already painted. Nothing to say: an empty question list and an unreachable one look the
+      // same to somebody who has not asked anything yet.
+    }
+  }
+
+  async function ask(text: string, target: HTMLButtonElement): Promise<void> {
+    if (text.length < 3) return;
+    await withBusy(target, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const nonce = newNonce();
+        // Signed over the same bytes the server rebuilds, so the question is provably this wallet's.
+        const canonical = canonicaliseQuestion({ chitId: chit.id, nonce, text });
+        const signature = await session.wallet.signText(canonical);
+        const result = await api.ask(chit.id, signature, nonce, text);
+        if (!result.ok) {
+          messages.append(note(result.error, 'warn'));
+          return;
+        }
+        paint(result.value.questions);
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone === 'calm' ? 'calm' : 'warn'));
+      }
+    });
+  }
+
+  async function answer(question: ApiQuestion, text: string, target: HTMLButtonElement): Promise<void> {
+    if (text.length < 2) return;
+    await withBusy(target, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const canonical = canonicaliseAnswer({ chitId: chit.id, questionId: question.id, text });
+        const signature = await session.wallet.signText(canonical);
+        const result = await api.answerQuestion(chit.id, question.id, signature, text);
+        if (!result.ok) {
+          messages.append(note(result.error, 'warn'));
+          return;
+        }
+        paint(result.value.questions);
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone === 'calm' ? 'calm' : 'warn'));
+      }
+    });
+  }
+
+  paint([]);
+  void reload();
+  void navigate;
+  return box;
 }
 
 /* ------------------------------------------------------------------ countersign */
@@ -1284,6 +1712,9 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
          * difference has to be said on the screen where it would happen, not in a help page.
          */
         note(t('chit never asks you to deposit, or to pay a fee to be paid. If anyone asks you to send money first, it is a scam — leave.'), 'calm'),
+        // Before signing, not after: the whole point is to settle a doubt while it can still change
+        // whether you sign at all.
+        questionsPanel(chit, navigate, { isAuthor: false }),
         walletBanner(detection, chit.shareUrl),
         messages,
       ],
@@ -1921,6 +2352,181 @@ function reviewPanel(chit: ApiChit, navigate: Navigate, isParty: boolean): HTMLE
   });
 }
 
+/**
+ * Offering a finished job as a portfolio piece, and agreeing to it being shown.
+ *
+ * `packages/core/src/showcase.ts` carries the reasoning. What this function owes the screen is that
+ * neither side is ever misled about what their tap does:
+ *
+ *  - The worker's button says the piece is **not** public yet, because it is not — the client has to
+ *    agree, and a worker who thought otherwise might offer something they should not.
+ *  - The payer is shown the actual link before agreeing. Agreeing to publish something you have not
+ *    looked at is not consent, and a button that made that easy would be the whole risk of this
+ *    feature in one control.
+ *  - A published piece says so, and offers nothing further, because there is nothing further to do.
+ */
+function showcasePanel(chit: ApiChit, isPayer: boolean, isWorker: boolean): HTMLElement | null {
+  if (!chit.settled) return null;
+  if (!isPayer && !isWorker) return null;
+
+  const box = el('div', { class: 'stack stack--tight' });
+  const messages = el('div', { class: 'stack stack--tight' });
+
+  const paint = (piece: ApiShowcase | null): void => {
+    box.replaceChildren();
+
+    if (piece?.agreed) {
+      box.append(
+        el('div', {
+          class: 'card',
+          children: [
+            el('h2', { class: 'section', text: t('Shown as work') }),
+            el('p', {
+              class: 'small secondary',
+              text: t('Both of you signed this, so it is on the public record with the payment beside it.'),
+            }),
+            el('a', {
+              class: 'link-row',
+              text: displayLink(piece.link),
+              attrs: { href: piece.link, target: '_blank', rel: 'noopener noreferrer' },
+            }),
+          ],
+        }),
+        messages,
+      );
+      return;
+    }
+
+    if (piece && isPayer) {
+      // The payer decides. The link is shown, not summarised — see the header.
+      const agree = button(t('Agree to show it'), () => void confirm(piece, agree), 'quiet', 'check');
+      box.append(
+        el('div', {
+          class: 'card',
+          children: [
+            el('h2', { class: 'section', text: t('They would like to show this work') }),
+            el('p', { class: 'small secondary', text: t('It goes on their public record with what you paid beside it. Nothing is shown unless you agree.') }),
+            el('a', {
+              class: 'link-row',
+              text: displayLink(piece.link),
+              attrs: { href: piece.link, target: '_blank', rel: 'noopener noreferrer' },
+            }),
+            piece.caption ? el('div', { class: 'small secondary', text: piece.caption }) : el('span'),
+            agree,
+          ],
+        }),
+        messages,
+      );
+      return;
+    }
+
+    if (isWorker) {
+      const linkField = el('input', {
+        class: 'field',
+        attrs: { type: 'url', inputmode: 'url', autocomplete: 'off', 'aria-label': t('Link to the work'), placeholder: 'https://…' },
+      }) as HTMLInputElement;
+      const captionField = el('input', {
+        class: 'field',
+        attrs: { type: 'text', maxlength: 200, autocomplete: 'off', 'aria-label': t('One line about it'), placeholder: t('One line about it') },
+      }) as HTMLInputElement;
+      if (piece) {
+        linkField.value = piece.link;
+        captionField.value = piece.caption;
+      }
+
+      const send = button(piece ? t('Update the offer') : t('Offer it as a piece'), () => void propose(linkField.value.trim(), captionField.value.trim(), send), 'quiet', 'star');
+      send.disabled = !piece;
+      const check = (): void => {
+        send.disabled = linkField.value.trim().length < 8;
+      };
+      linkField.addEventListener('input', check);
+      check();
+
+      box.append(
+        el('div', {
+          class: 'card',
+          children: [
+            el('h2', { class: 'section', text: t('Show this work') }),
+            el('p', {
+              class: 'small secondary',
+              text: piece
+                ? t('Offered. It is not public until they agree.')
+                : t('Put it on your public record, with the payment beside it as proof somebody paid for it. Your client has to agree first.'),
+            }),
+            linkField,
+            captionField,
+            send,
+          ],
+        }),
+        messages,
+      );
+      return;
+    }
+
+    box.append(messages);
+  };
+
+  async function load(): Promise<void> {
+    try {
+      const result = await api.showcase(chit.id);
+      if (result.ok) paint(result.value.showcase);
+    } catch {
+      // Already painted from what this side can offer. Nothing useful to say about a failed read.
+    }
+  }
+
+  async function propose(link: string, caption: string, target: HTMLButtonElement): Promise<void> {
+    if (!chit.settledTx || link.length < 8) return;
+    await withBusy(target, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const canonical = canonicaliseShowcase({ chitId: chit.id, txHash: chit.settledTx!.toLowerCase(), link, caption });
+        const signature = await session.wallet.signText(canonical);
+        const result = await api.offerShowcase(chit.id, signature, link, caption);
+        if (!result.ok) {
+          messages.append(note(result.error, 'warn'));
+          return;
+        }
+        paint(result.value.showcase);
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone === 'calm' ? 'calm' : 'warn'));
+      }
+    });
+  }
+
+  async function confirm(piece: ApiShowcase, target: HTMLButtonElement): Promise<void> {
+    await withBusy(target, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        /*
+         * Signed over the bytes the server stored, which the client is handed rather than rebuilding.
+         * Rebuilding them here would mean agreeing to this browser's idea of the piece; the server
+         * refuses a signature over anything but the stored text, so the two must be the same object.
+         */
+        const signature = await session.wallet.signText(piece.canonical);
+        const result = await api.agreeShowcase(chit.id, signature);
+        if (!result.ok) {
+          messages.append(note(result.error, 'warn'));
+          return;
+        }
+        paint(result.value.showcase);
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone === 'calm' ? 'calm' : 'warn'));
+      }
+    });
+  }
+
+  paint(null);
+  void load();
+  return box;
+}
+
 function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWorker: boolean): void {
   const me = rememberedAddress();
   const dir = isWorker ? 'earning' : 'paying';
@@ -1982,6 +2588,8 @@ function settledScreen(chit: ApiChit, navigate: Navigate, isPayer: boolean, isWo
           'good',
         ),
         reviewPanel(chit, navigate, isPayer || isWorker),
+        // After the review, because a piece is what somebody does with a job that went well.
+        showcasePanel(chit, isPayer, isWorker),
         isWorker ? identityPanel(() => settledScreen(chit, navigate, isPayer, isWorker)) : null,
         isWorker ? cashOutHelp() : null,
       ],
@@ -2662,6 +3270,42 @@ export async function profileScreen(address: string, navigate: Navigate): Promis
           ? el('div', {
               class: 'card card--pad stack stack--tight',
               children: [el('h2', { text: t('What the other side said') }), ...view.reviews.map((r) => reviewRow(r, me, r.chitText))],
+            })
+          : null,
+        /*
+         * The portfolio, above the list of settled work rather than below it.
+         *
+         * Somebody deciding whether to hire looks at the work first and the ledger second, and this
+         * is the one part of the record that shows the work itself. It is also the part no other
+         * marketplace can offer honestly: each piece carries the payment that bought it and the
+         * client's own signature agreeing to show it, so a stolen portfolio is not expressible here.
+         */
+        (view.showcase ?? []).length > 0
+          ? el('div', {
+              class: 'stack stack--tight',
+              children: [
+                el('h2', { class: 'section', text: t('Work') }),
+                el('p', { class: 'small secondary', text: t('Each piece was paid for, and the client agreed to it being shown.') }),
+                el('div', {
+                  class: 'list',
+                  children: (view.showcase ?? []).map((piece) =>
+                    el('a', {
+                      class: 'list__item list__item--tap',
+                      attrs: { href: piece.link, target: '_blank', rel: 'noopener noreferrer' },
+                      children: [
+                        el('div', {
+                          class: 'list__main',
+                          children: [
+                            el('div', { class: 'list__text list__text--wrap', text: piece.caption || displayLink(piece.link) }),
+                            el('div', { class: 'list__meta', text: `${displayLink(piece.link)} · ${formatDate(piece.at)}` }),
+                          ],
+                        }),
+                        el('div', { class: 'list__side', children: [icon('external', 'icon--sm')] }),
+                      ],
+                    }),
+                  ),
+                }),
+              ],
             })
           : null,
         workList.length > 0

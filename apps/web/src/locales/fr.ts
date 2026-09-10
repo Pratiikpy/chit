@@ -529,6 +529,64 @@ const fr: Dict = {
     'Ton portefeuille est sur le réseau de test Nimiq, mais ce chit porte sur de vrais NIM. Bascule Nimiq Pay sur le réseau principal et réessaie.',
   'Your wallet is on Nimiq mainnet, but this is a test-network chit. Switch Nimiq Pay to testnet and try again.':
     'Ton portefeuille est sur le réseau principal Nimiq, mais ce chit est sur le réseau de test. Bascule Nimiq Pay sur le réseau de test et réessaie.',
+
+
+  /* The board — finding work, and being found. */
+  'Board': 'Tableau',
+  'We could not read the chain just now, so we cannot say which chits are still open. Try again in a moment.': 'Nous n\'avons pas pu lire la chaîne à l\'instant, donc nous ne pouvons pas dire quels chits sont encore ouverts. Réessaie dans un moment.',
+  'logo, translation, video…': 'logo, traduction, vidéo…',
+  'Search the board': 'Rechercher dans le tableau',
+  'Search': 'Rechercher',
+  'Which side of the board': 'Quel côté du tableau',
+  'Everything': 'Tout',
+  'Work': 'Missions',
+  'People': 'Personnes',
+  'Best match': 'Plus pertinents',
+  'Newest': 'Plus récents',
+  'Closing soon': 'Bientôt clos',
+  'Highest paid': 'Mieux payés',
+  'Order': 'Ordre',
+  'New here': 'Nouveau ici',
+  'Offer': 'Offre',
+  'closing today': 'se termine aujourd\'hui',
+  '{n}d left': 'encore {n} j',
+  'Work with the money already on it, and people offering theirs. Open one to read the whole agreement before you sign anything.': 'Des missions dont l\'argent est déjà déposé, et des personnes qui proposent le leur. Ouvre-en une pour lire tout l\'accord avant de signer quoi que ce soit.',
+  'Nothing matches that.': 'Rien ne correspond.',
+  'The board is empty right now.': 'Le tableau est vide pour le moment.',
+  'Try a shorter word — or post what you need and let somebody come to you.': 'Essaie un mot plus court — ou publie ce dont tu as besoin et laisse quelqu\'un venir à toi.',
+  'Post what you need, or what you can do, and it appears here.': 'Publie ce dont tu as besoin, ou ce que tu sais faire, et cela apparaîtra ici.',
+  '{shown} of {total} open': '{shown} sur {total} ouverts',
+  'Show more': 'Afficher plus',
+  '{n} done': '{n} réalisés',
+  '★{rating} · {n} done': '★{rating} · {n} réalisés',
+
+
+  /* Questions asked in public before anybody commits. */
+  'Questions': 'Questions',
+  'Asked in public, so the next person does not have to ask again.': 'Posée en public, pour que la personne suivante n\'ait pas à la reposer.',
+  'Answer it in one line': 'Réponds en une ligne',
+  'Answer': 'Répondre',
+  'Not answered yet.': 'Pas encore de réponse.',
+  'Your question': 'Ta question',
+  'e.g. does this include the source files?': 'p. ex. les fichiers sources sont-ils inclus ?',
+  'Ask in public': 'Poser en public',
+  'Ask before you sign. Everyone can see the question and the answer — including you, later.': 'Pose ta question avant de signer. Tout le monde voit la question et la réponse — toi compris, plus tard.',
+
+
+  /* Portfolio pieces: paid for, and shown only with the client agreeing. */
+  'Shown as work': 'Montré comme travail',
+  'Both of you signed this, so it is on the public record with the payment beside it.': 'Vous l\'avez signé tous les deux, donc c\'est au registre public avec le paiement à côté.',
+  'Agree to show it': 'Accepter de le montrer',
+  'They would like to show this work': 'Ils aimeraient montrer ce travail',
+  'It goes on their public record with what you paid beside it. Nothing is shown unless you agree.': 'Cela ira sur leur page publique, avec ce que tu as payé à côté. Rien n\'est montré sans ton accord.',
+  'Link to the work': 'Lien vers le travail',
+  'Update the offer': 'Modifier la proposition',
+  'Offer it as a piece': 'Le proposer comme réalisation',
+  'Show this work': 'Montrer ce travail',
+  'Offered. It is not public until they agree.': 'Proposé. Ce n\'est public que lorsqu\'ils acceptent.',
+  'Put it on your public record, with the payment beside it as proof somebody paid for it. Your client has to agree first.': 'Mets-le sur ta page publique, avec le paiement à côté comme preuve que quelqu\'un l\'a payé. Ton client doit d\'abord accepter.',
+  'Each piece was paid for, and the client agreed to it being shown.': 'Chaque réalisation a été payée, et le client a accepté de la montrer.',
+  'Offer a different deal': 'Proposer un autre accord',
 };
 
 export default fr;

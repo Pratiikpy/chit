@@ -26,9 +26,13 @@ anyone can check — with no account, and without chit.
    agreement's digest in the memo. That is the entire product, done once, and it is how a
    person with an empty wallet gets their first NIM. *(The pool must be funded; if its
    balance is below one payout the card says so and offers nothing.)*
-3. **Or walk both sides alone.** Write a chit, tap **Try the demo worker** to have a
+3. **Or open the board.** It is in the nav on every screen and needs no wallet to read:
+   open work with the money already on it, and people offering their time, in one list.
+   Everything on it is a real signed chit — nothing is seeded, and each row says why it
+   ranks where it does.
+4. **Or walk both sides alone.** Write a chit, tap **Try the demo worker** to have a
    labelled stand-in countersign it, pay it, and you are holding a receipt.
-4. **Check the receipt without us.** Open it and your browser recomputes the digest from
+5. **Check the receipt without us.** Open it and your browser recomputes the digest from
    the words in the link and reads the transaction from a public Nimiq node. chit's server
    is not in that path.
 
@@ -83,6 +87,28 @@ work they demonstrably paid for.
 **Nobody types an address.** On an open chit the countersignature supplies the worker's
 address, derived from the key that signed it; on a quote the payment supplies the client's.
 Nothing is copied between apps, and nothing can redirect the payment.
+
+**The board is how a stranger finds either.** Until it existed, a chit was a link you sent
+to somebody you already had — which made chit useless to the person it is for, a freelancer
+with no client. Both halves of a marketplace were already in the object model and neither
+was visible: an open chit is *work available*, a quote is *a person available*. The board
+shows both, searchable, and ranks them on **settled payments only** — with the reasoning
+printed on every row, because a marketplace that ranks people in secret is the thing this
+audience resents most. Money never buys position, ever. A wallet with no history is carried
+at a floor rather than buried, because everybody's first chit is somebody's first chit.
+
+**One question, in public, before anybody commits.** The thing buyers do most on Fiverr is
+message the seller first. chit has no inbox and will not have one — so a question is one
+signed line attached to the chit, answered once by whoever wrote it, and readable by
+everyone. On Fiverr the same question is asked privately fifty times; here the first person
+to ask asks for everybody, which is a worse private channel and a much better product.
+
+**A portfolio that cannot be faked, and cannot be published alone.** Every other portfolio
+is a folder somebody uploaded — the work may be someone else's and nobody may ever have
+paid for it. Here a piece is a settled chit with the work attached: the payment is on chain
+beside it. It takes **two signatures**, because the deliverable may be the client's
+unreleased material, and a worker who could publish alone would be one bad judgement from
+real harm. Nothing appears on a public record that the client did not sign for.
 
 **Settlement is observed, never asserted.** A transaction settles a chit only if it carries
 the digest **and** pays the named address **and** clears 97% of the signed amount. A memo

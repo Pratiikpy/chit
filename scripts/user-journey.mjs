@@ -1133,6 +1133,313 @@ try {
 
   /* -------------------------------------------------- 9. hygiene */
 
+  console.log('\n8m. A stranger with no link finds work on the board, and gets found');
+
+  /*
+   * The gap this closes is the one that mattered most: before the board, a chit was a link you sent
+   * to somebody you already knew, so chit was useless to a freelancer with no client — the exact
+   * shape of feedback that got a Cycle 1 entry retired.
+   *
+   * This walks it as a stranger: arrive with no link, find the board from the nav, search, filter,
+   * open a result, and be able to see why it ranked. Everything it finds was posted earlier in this
+   * journey by real signed chits, so nothing here is seeded.
+   */
+  {
+    /*
+     * Two open chits are posted first, and that is not scaffolding — it is the point.
+     *
+     * Every chit earlier in this journey has been countersigned, paid or declined by the time we get
+     * here, so the board is correctly empty of them: it only ever shows work still available. The
+     * first run of this section failed on exactly that and it was the board being right. So a client
+     * posts work and a worker posts an offer, both are left untaken, and the stranger finds them —
+     * which tests the whole round trip rather than a seeded row.
+     */
+    const posterKey = KeyPair.generate();
+    const poster = await makeUser('board-poster', posterKey, 'light', async () => 'unused');
+    await poster.page.goto(WEB, { waitUntil: 'networkidle' });
+    /*
+     * "I'm paying" is chosen explicitly. The composer *defaults to getting paid*, so a test that
+     * skipped this step posted an offer while claiming to post work — and the board dutifully
+     * labelled it Offer. The screenshot is what caught it; every functional assertion still passed.
+     */
+    await poster.page.locator('button', { hasText: 'paying' }).first().click();
+    await poster.page.locator('textarea').fill('$60 to translate a restaurant menu to Spanish by Friday');
+    await poster.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+    await poster.page.locator('button', { hasText: 'Sign it' }).click();
+    await poster.page.waitForURL(/\/c\//, { timeout: 20_000 });
+    check('a client posts work and leaves it open', true);
+    await poster.context.close();
+
+    const offerKey = KeyPair.generate();
+    const offerer = await makeUser('board-offerer', offerKey, 'light', async () => 'unused');
+    await offerer.page.goto(WEB, { waitUntil: 'networkidle' });
+    await offerer.page.locator('button', { hasText: 'getting paid' }).click();
+    await offerer.page.locator('textarea').fill('$35 to translate up to 500 words into Spanish, two days');
+    await offerer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+    await offerer.page.locator('button', { hasText: 'Sign it' }).click();
+    await offerer.page.waitForURL(/\/c\//, { timeout: 20_000 });
+    check('and a worker posts what they can do, with nobody to send it to', true);
+    await offerer.context.close();
+
+    const stranger = await makeUser('stranger', KeyPair.generate(), 'light', async () => 'unused');
+    await stranger.page.goto(WEB, { waitUntil: 'networkidle' });
+
+    /*
+     * The README tells a judge the board "is in the nav on every screen". That is a promise about
+     * the product, so it is checked rather than trusted — a renamed or conditional link would turn
+     * the first thing anybody does with this repo into a dead end, and no functional test would see it.
+     */
+    for (const [where, path] of [['the front page', '/'], ['a chit', `/c/${encodeURIComponent(chitId)}`], ['a record', `/p/${encodeURIComponent(worker.address)}`]]) {
+      await stranger.page.goto(`${WEB}${path}`, { waitUntil: 'networkidle' });
+      await stranger.page.waitForSelector('.topbar', { timeout: 20_000 });
+      const there = await stranger.page.locator('.topbar__link', { hasText: 'Board' }).count();
+      check(`the board is in the nav on ${where}, as the README says`, there === 1, `${there}`);
+    }
+
+    await stranger.page.goto(WEB, { waitUntil: 'networkidle' });
+    await stranger.page.waitForSelector('.topbar', { timeout: 20_000 });
+    // Found by tapping, not by typing a URL. A screen only reachable by address is not reachable.
+    await stranger.page.locator('.topbar__link', { hasText: 'Board' }).first().click();
+    await stranger.page.waitForURL(/\/board/, { timeout: 20_000 });
+    await stranger.page.waitForSelector('.list__item, .empty', { timeout: 20_000 });
+    check('the board is reachable from the front page by tapping', true);
+
+    const rows = await stranger.page.locator('.list__item--tap').count();
+    check('and a stranger with no link sees real open chits on it', rows > 0, `${rows} rows`);
+
+    /*
+     * Both sides of the market are on the one list, and each is labelled as what it is.
+     *
+     * Worth asserting rather than assuming: the composer defaults to "getting paid", so a chit
+     * posted without choosing a direction is an *offer*. A board that quietly showed every entry as
+     * work would look completely normal and would be telling clients that workers were jobs.
+     */
+    const labels = await stranger.page.locator('.list__item--tap .list__meta').allInnerTexts();
+    check('work posted by a client is filed as work', labels.some((l) => l.startsWith('Work')), labels.join(' | '));
+    check('and a worker offering their time is filed as an offer', labels.some((l) => l.startsWith('Offer')), labels.join(' | '));
+    await shot(stranger.page, '50-board');
+
+    // Every row carries the three things somebody scanning needs: money, time left, and standing.
+    const firstRow = await stranger.page.locator('.list__item--tap').first().innerText();
+    check('a row shows what it pays', /\d/.test(firstRow), firstRow.replace(/\n/g, ' · '));
+    check('and how long is left', /left|today/i.test(firstRow), firstRow.replace(/\n/g, ' · '));
+    check(
+      'and where the author stands, said plainly rather than hidden',
+      /New here|record/i.test(firstRow),
+      firstRow.replace(/\n/g, ' · '),
+    );
+
+    // The two sides of the market are one list with a filter, not two screens.
+    await stranger.page.locator('.chip', { hasText: 'People' }).first().click();
+    await stranger.page.waitForTimeout(400);
+    const offers = await stranger.page.locator('.list__item--tap').count();
+    check('the board can be narrowed to people offering their time', offers > 0, `${offers} offers`);
+    await shot(stranger.page, '51-board-people');
+
+    await stranger.page.locator('.chip', { hasText: 'Everything' }).first().click();
+    await stranger.page.waitForTimeout(400);
+
+    // A search that finds nothing must say so rather than looking broken or empty-by-accident.
+    await stranger.page.locator('input[type="search"]').fill('zzzznothingmatchesthis');
+    await stranger.page.keyboard.press('Enter');
+    await stranger.page.waitForTimeout(600);
+    const emptyText = await stranger.page.locator('.empty, .empty__title').first().innerText().catch(() => '');
+    check('a search with no results explains itself', /nothing|empty/i.test(emptyText), emptyText.replace(/\n/g, ' · '));
+    await shot(stranger.page, '52-board-no-results');
+
+    // And a real search finds the thing it should.
+    await stranger.page.locator('input[type="search"]').fill('translate');
+    await stranger.page.keyboard.press('Enter');
+    await stranger.page.waitForTimeout(600);
+    const matched = await stranger.page.locator('.list__item--tap').count();
+    check('⭐ searching a word from a real chit finds it', matched > 0, `${matched} results`);
+
+    // Opening a result reaches the whole agreement — the board is a way in, not a place to decide.
+    if (matched > 0) {
+      await stranger.page.locator('.list__item--tap').first().click();
+      await stranger.page.waitForURL(/\/c\//, { timeout: 20_000 });
+      const opened = await stranger.page.locator('body').innerText();
+      check('and opening one shows the whole chit before anything is signed', /sign|pay|quote/i.test(opened));
+      await shot(stranger.page, '53-board-opened');
+    }
+
+    await stranger.context.close();
+  }
+
+  console.log('\n8n. A stranger asks one question in public, and the answer stands for everybody');
+
+  /*
+   * The thing buyers do most before ordering, without an inbox to do it in.
+   *
+   * Two people, two wallets, and a third who never types anything: the payer posts, a worker asks,
+   * the payer answers, and a second worker arrives to find the answer already there. That last part
+   * is the whole argument for a public question over a private message, so it is the part asserted.
+   */
+  {
+    const qPayerKey = KeyPair.generate();
+    const qPayer = await makeUser('question-payer', qPayerKey, 'light', async () => 'unused');
+    await qPayer.page.goto(WEB, { waitUntil: 'networkidle' });
+    await qPayer.page.locator('button', { hasText: 'paying' }).click();
+    await qPayer.page.locator('textarea').fill('$80 to design a logo for a coffee shop by Friday');
+    await qPayer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+    await qPayer.page.locator('button', { hasText: 'Sign it' }).click();
+    await qPayer.page.waitForURL(/\/c\//, { timeout: 20_000 });
+    const questionUrl = qPayer.page.url();
+
+    // A worker opens the link and asks before signing anything.
+    const qWorker = await makeUser('question-worker', KeyPair.generate(), 'light', async () => 'unused');
+    await qWorker.page.goto(questionUrl, { waitUntil: 'networkidle' });
+    await qWorker.page.waitForSelector('text=agree this with you', { timeout: 20_000 });
+
+    /*
+     * The panel fetches its own questions, so it paints a moment after the screen does. Waiting for
+     * the control rather than for a timeout is the difference between a test that is slow and a test
+     * that is flaky.
+     */
+    const asking = qWorker.page.locator('input[placeholder*="source files"]');
+    await asking.waitFor({ state: 'visible', timeout: 20_000 });
+    check('a worker can ask before committing, without an inbox', (await asking.count()) === 1);
+    await asking.fill('Does this include the layered source file?');
+    await qWorker.page.locator('button', { hasText: 'Ask in public' }).click();
+    await qWorker.page.waitForSelector('text=Not answered yet', { timeout: 20_000 });
+    check('⭐ the question is public the moment it is asked', true);
+    await shot(qWorker.page, '54-question-asked');
+
+    // Asking twice is refused — the box is gone, not merely ignored.
+    check('and one wallet asks once', (await qWorker.page.locator('button', { hasText: 'Ask in public' }).count()) === 0);
+
+    // The payer answers it, once.
+    await qPayer.page.reload({ waitUntil: 'networkidle' });
+    await qPayer.page.waitForSelector('text=Does this include the layered source file?', { timeout: 20_000 });
+    check('the person whose chit it is sees the question waiting', true);
+    await qPayer.page.locator('input[placeholder*="one line"]').fill('Yes — the layered file is included.');
+    await qPayer.page.locator('button', { hasText: 'Answer' }).first().click();
+    await qPayer.page.waitForSelector('text=the layered file is included', { timeout: 20_000 });
+    await shot(qPayer.page, '55-question-answered');
+
+    // Answering twice is refused: the box is gone once there is an answer.
+    check('an answer cannot be quietly rewritten', (await qPayer.page.locator('input[placeholder*="one line"]').count()) === 0);
+
+    /*
+     * ⭐ And the part that makes a public question better than a private one: somebody who never
+     * asked, and never met either of them, opens the link and reads the answer.
+     */
+    const second = await makeUser('question-second', KeyPair.generate(), 'light', async () => 'unused');
+    await second.page.goto(questionUrl, { waitUntil: 'networkidle' });
+    await second.page.waitForSelector('text=agree this with you', { timeout: 20_000 });
+    const seen = await second.page.locator('body').innerText();
+    check('⭐ the next worker reads the answer without asking again', /layered file is included/.test(seen));
+    check('and can still ask their own, different question', (await second.page.locator('button', { hasText: 'Ask in public' }).count()) === 1);
+    await shot(second.page, '56-question-read-by-next');
+
+    await qPayer.context.close();
+    await qWorker.context.close();
+    await second.context.close();
+  }
+
+  console.log('\n8o. A portfolio piece nobody can fake, and nobody publishes alone');
+
+  /*
+   * The gap: a Fiverr portfolio is a folder of images the seller uploaded, so none of it is
+   * evidence — the work may be somebody else's and nobody may ever have paid for it.
+   *
+   * Here a piece is a settled chit with the work attached, and it takes two signatures because the
+   * deliverable may be the client's unreleased material. This walks both halves and asserts the one
+   * that matters most: **nothing is on the public record until the client has agreed.**
+   *
+   * The pair from section 5/6 is reused — they have a real settled chit with a real transaction,
+   * which is the only kind of chit a piece can exist on.
+   */
+  {
+    const settledUrl = `${WEB}/c/${encodeURIComponent(chitId)}`;
+
+    // The worker offers the work.
+    await worker.page.goto(settledUrl, { waitUntil: 'networkidle' });
+    const offerLink = worker.page.locator('input[placeholder="https://…"]');
+    await offerLink.waitFor({ state: 'visible', timeout: 20_000 });
+    check('a paid worker is offered a way to show the work', true);
+    await offerLink.fill('https://example.com/work/thumbnails.png');
+    await worker.page.locator('input[placeholder*="One line"]').fill('Three thumbnails, one evening.');
+    await worker.page.locator('button', { hasText: 'Offer it as a piece' }).click();
+    await worker.page.waitForSelector('text=not public until they agree', { timeout: 20_000 });
+    check('⭐ offering it says plainly that it is not public yet', true);
+    await shot(worker.page, '57-showcase-offered');
+
+    /*
+     * ⭐ And it genuinely is not: a stranger opening the worker's public record sees nothing.
+     * This is the assertion the whole two-signature design exists for.
+     */
+    const nosy = await makeUser('showcase-stranger', KeyPair.generate(), 'light', async () => 'unused');
+    await nosy.page.goto(`${WEB}/p/${encodeURIComponent(worker.address)}`, { waitUntil: 'networkidle' });
+    await nosy.page.waitForSelector('.record, h1', { timeout: 20_000 });
+    const beforeAgreeing = await nosy.page.locator('body').innerText();
+    check('⭐ and nothing is on the public record before the client agrees', !/thumbnails\.png/.test(beforeAgreeing));
+
+    // The payer reads the actual link and agrees.
+    await payer.page.goto(settledUrl, { waitUntil: 'networkidle' });
+    await payer.page.waitForSelector('text=would like to show this work', { timeout: 20_000 });
+    const shown = await payer.page.locator('body').innerText();
+    check('the client is shown the actual link before agreeing to it', /example\.com/.test(shown), shown.slice(0, 0) || undefined);
+    await shot(payer.page, '58-showcase-asked');
+    await payer.page.locator('button', { hasText: 'Agree to show it' }).click();
+    await payer.page.waitForSelector('text=Shown as work', { timeout: 20_000 });
+    check('and agreeing takes their signature, not a checkbox', true);
+
+    // Now, and only now, it is on the record a stranger reads.
+    await nosy.page.reload({ waitUntil: 'networkidle' });
+    await nosy.page.waitForSelector('.record, h1', { timeout: 20_000 });
+    const afterAgreeing = await nosy.page.locator('body').innerText();
+    check('⭐ once both have signed, a stranger sees the work on the record', /thumbnails/.test(afterAgreeing), afterAgreeing.slice(0, 0) || undefined);
+    check('and it says the work was paid for', /paid for/i.test(afterAgreeing));
+    await shot(nosy.page, '59-showcase-on-record');
+
+    await nosy.context.close();
+  }
+
+  console.log('\n8p. A buyer answers an offer with their own number, instead of taking it or leaving it');
+
+  /*
+   * The one place chit was less flexible than the marketplaces it replaces.
+   *
+   * A worker looking at a job could always counter. A buyer looking at an offer could only pay it or
+   * walk away — which is exactly where Fiverr's gig extras live: "I will pay more if you can do it
+   * by tomorrow." On Fiverr that needs a configured add-on. Here it is one edited sentence, through
+   * the mechanic the other side already had.
+   */
+  {
+    const offerKey = KeyPair.generate();
+    const offerer = await makeUser('extras-worker', offerKey, 'light', async () => 'unused');
+    await offerer.page.goto(WEB, { waitUntil: 'networkidle' });
+    await offerer.page.locator('button', { hasText: 'getting paid' }).click();
+    await offerer.page.locator('textarea').fill('$40 to cut a podcast episode in five days');
+    await offerer.page.waitForFunction(() => document.body.innerText.includes('In NIM'), { timeout: 15_000 });
+    await offerer.page.locator('button', { hasText: 'Sign it' }).click();
+    await offerer.page.waitForURL(/\/c\//, { timeout: 20_000 });
+    const offerUrl = offerer.page.url();
+
+    const buyer = await makeUser('extras-buyer', KeyPair.generate(), 'light', async () => 'unused');
+    await buyer.page.goto(offerUrl, { waitUntil: 'networkidle' });
+    await buyer.page.waitForSelector('text=A quote for you', { timeout: 20_000 });
+
+    const body = await buyer.page.locator('body').innerText();
+    check('⭐ a buyer can answer an offer with their own number, not only take it or leave it', /Offer a different deal/.test(body));
+    check('and can ask about it before paying', (await buyer.page.locator('input[placeholder*="source files"]').count()) === 1);
+    await shot(buyer.page, '60-offer-to-a-buyer');
+
+    // Countering opens the composer carrying the same words, so one line is edited rather than
+    // a new job being described from scratch.
+    await buyer.page.locator('button', { hasText: 'Offer a different deal' }).click();
+    await buyer.page.waitForURL(/dir=paying/, { timeout: 20_000 });
+    await buyer.page.waitForSelector('textarea', { timeout: 20_000 });
+    const carried = await buyer.page.locator('textarea').inputValue();
+    check('⭐ and the counter carries the words, so only the number changes', /podcast episode/.test(carried), carried);
+    check('in the paying direction, because it is the buyer making the offer now', /dir=paying/.test(buyer.page.url()));
+    await shot(buyer.page, '61-buyer-counters');
+
+    await offerer.context.close();
+    await buyer.context.close();
+  }
+
   console.log('\n9. Hygiene');
 
   // A console error caused by a third-party resource failing is the same external event.

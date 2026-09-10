@@ -32,6 +32,27 @@ export {
 } from './delivery.ts';
 
 export {
+  ANSWER_CANONICAL_VERSION,
+  MAX_ANSWER_BYTES,
+  MAX_QUESTION_BYTES,
+  QUESTION_CANONICAL_VERSION,
+  canonicaliseAnswer,
+  canonicaliseQuestion,
+  parseAnswer,
+  parseQuestion,
+  type Answer,
+  type Question,
+} from './question.ts';
+
+export {
+  MAX_CAPTION_BYTES,
+  SHOWCASE_CANONICAL_VERSION,
+  canonicaliseShowcase,
+  parseShowcase,
+  type Showcase,
+} from './showcase.ts';
+
+export {
   MAX_RATING,
   MAX_REVIEW_BYTES,
   MIN_RATING,

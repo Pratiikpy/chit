@@ -1358,3 +1358,105 @@ h1.empty__title { font-size: 1.25rem; line-height: 1.3; margin: 0; letter-spacin
 .receipt__worth { margin: 0; color: var(--chit-secondary); font-size: 0.875rem; }
 .receipt__worth--source { color: var(--chit-muted); font-size: 0.8125rem; }
 @media print { .receipt__worth { color: #333; } }
+
+/* ------------------------------------------------------------------ the board */
+
+/*
+ * The search row: one field and one button, on one line at every width.
+ *
+ * `min-width: 0` on the input is load-bearing rather than decorative — a flex child defaults to
+ * min-content, so without it a long placeholder pushes the button off a 360px phone instead of the
+ * field shrinking. That is the single most common flexbox bug in a search bar.
+ */
+.board__search {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.board__search .field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * Filters scroll sideways rather than wrapping onto a second and third line.
+ *
+ * Wrapping is the obvious choice and it is wrong here: the number of chips changes with the
+ * viewport, so the list below them starts at a different height on every phone, and the first row
+ * of actual results gets pushed under the fold on the narrow ones. A single scrolling row is always
+ * exactly one row tall.
+ */
+.board__filters {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  /* No horizontal scrollbar on desktop, no rubber-banding into the page on iOS. */
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.board__filters::-webkit-scrollbar { display: none; }
+
+/* The sort row is subordinate to the side filter above it, and reads that way. */
+.board__filters--quiet { opacity: 0.9; }
+
+/* A whole row is the tap target, so the finger has 64px rather than a link's line-height. */
+.list__item--tap {
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.list__item--tap:hover { background: var(--chit-surface-2, var(--chit-surface)); }
+.list__item--tap:active { transform: scale(0.995); }
+
+/*
+ * The standing tag: a computed record, or the fact that there is not one yet.
+ *
+ * Deliberately quiet. It is context for the money and the deadline beside it, not a badge to chase
+ * — the moment a marketplace makes its status labels loud, the labels become the product.
+ */
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--chit-line);
+  color: var(--chit-ink-2, inherit);
+  white-space: nowrap;
+}
+
+/*
+ * A newcomer is marked, not hidden — and marked in a colour that reads as *new* rather than as
+ * *warning*. Somebody's first chit is usually their first Nimiq transaction, and this label is the
+ * first thing anyone will ever see about them.
+ */
+.tag--new {
+  background: color-mix(in oklch, var(--chit-primary) 16%, transparent);
+  color: var(--chit-primary);
+}
+
+/* ------------------------------------------------------------------ questions */
+
+/*
+ * A question and its answer, indented so the pair reads as one exchange.
+ *
+ * The answer is offset rather than boxed separately: two cards would look like two independent
+ * statements, and the whole value of a public answer is that it is attached to the question it
+ * settles.
+ */
+.qa { gap: 6px; }
+
+.qa__q {
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.qa__a {
+  margin-top: 4px;
+  padding-left: 12px;
+  border-left: 2px solid var(--chit-primary);
+  line-height: 1.5;
+}

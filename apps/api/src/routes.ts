@@ -13,7 +13,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { canonicalise, canonicaliseDelivery, canonicaliseReview, chitHash, isRecordOnly, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
+import { canonicalise, canonicaliseAnswer, canonicaliseDelivery, canonicaliseQuestion, canonicaliseReview, canonicaliseShowcase, chitHash, isRecordOnly, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
 import { addressFromPublicKey, verifyChit, verifySignedText } from '@chit/verify';
 import type { StoredChit } from './db.ts';
 import type { ChitRepository } from './repository.ts';
@@ -21,6 +21,7 @@ import type { SettlementWatcher } from './watcher.ts';
 import { RateUnavailableError, type RateService } from './rates.ts';
 import type { ChainClient } from './chain.ts';
 import { bodyLimit, rateLimit, securityHeaders } from './guard.ts';
+import { BOARD_KINDS, BOARD_SORTS, board, type BoardKind, type BoardSort } from './board.ts';
 import { ledger, presentLedger, presentProfile, profile } from './reputation.ts';
 import { toCsv } from './export.ts';
 import type { BountyService, DemoWorker } from './bounty.ts';
@@ -523,6 +524,92 @@ export function createRoutes(options: RouteOptions) {
   });
 
   /**
+   * ⭐ The board — the only route through which a stranger can find work, or be found.
+   *
+   * Everything it can show already existed as an object and was reachable only by link. See
+   * `board.ts` for the ranking and for why money never buys position.
+   *
+   * Inputs are validated to a closed set rather than passed through: an unknown sort or an
+   * unparseable amount is answered with a 400 naming the field, because a board that silently
+   * ignores a filter shows the wrong results confidently, which is worse than refusing.
+   */
+  app.get('/api/board', async (c) => {
+    const currentBlock = options.watcher?.stats.lastHeight || (await options.currentHeight?.().catch(() => 0)) || 0;
+    if (currentBlock <= 0) {
+      /*
+       * Without a height there is no way to tell an open chit from an expired one, and showing
+       * expired work to somebody about to spend an afternoon on it is the worst thing this screen
+       * could do. It says so instead of guessing.
+       */
+      return c.json({ code: 'no-chain', error: 'The chain height could not be read, so the board cannot say what is still open.' }, 503);
+    }
+
+    const kind = c.req.query('kind');
+    if (kind !== undefined && !BOARD_KINDS.includes(kind as BoardKind)) {
+      return c.json({ code: 'bad-kind', error: `kind must be one of ${BOARD_KINDS.join(', ')}` }, 400);
+    }
+
+    const sort = c.req.query('sort');
+    if (sort !== undefined && !BOARD_SORTS.includes(sort as BoardSort)) {
+      return c.json({ code: 'bad-sort', error: `sort must be one of ${BOARD_SORTS.join(', ')}` }, 400);
+    }
+
+    const money = (name: 'min' | 'max'): bigint | undefined | null => {
+      const raw = c.req.query(name);
+      if (raw === undefined || raw === '') return undefined;
+      if (!/^\d+$/.test(raw)) return null;
+      return BigInt(raw);
+    };
+    const minMinor = money('min');
+    const maxMinor = money('max');
+    if (minMinor === null || maxMinor === null) {
+      return c.json({ code: 'bad-amount', error: 'min and max are integers in the currency minor unit.' }, 400);
+    }
+
+    const currency = c.req.query('currency');
+    if (currency !== undefined && !/^[A-Za-z]{3}$/.test(currency)) {
+      return c.json({ code: 'bad-currency', error: 'currency is a 3-letter ISO 4217 code.' }, 400);
+    }
+
+    const number = (name: string, fallback: number): number => {
+      const raw = c.req.query(name);
+      const parsed = raw === undefined ? Number.NaN : Number(raw);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    };
+
+    const inputs = await store.boardInputs(currentBlock);
+    const page = board(inputs, currentBlock, {
+      q: c.req.query('q'),
+      kind: kind as BoardKind | undefined,
+      sort: sort as BoardSort | undefined,
+      minMinor,
+      maxMinor,
+      currency,
+      limit: number('limit', 24),
+      cursor: number('cursor', 0),
+    });
+
+    return c.json({
+      currentBlock,
+      total: page.total,
+      next: page.next,
+      entries: page.entries.map((entry) => ({
+        kind: entry.kind,
+        author: entry.author,
+        blocksLeft: entry.blocksLeft,
+        /*
+         * The ranking is published per entry, not just applied. A worker who cannot see why they
+         * are where they are has no way to tell a fair board from a rigged one — and this product's
+         * entire argument is that you should not have to take our word for anything.
+         */
+        why: entry.why,
+        standing: entry.standing,
+        chit: present(entry.chit, baseUrl, flags),
+      })),
+    });
+  });
+
+  /**
    * The bounty, in public: the pool, its balance, every payout, and the rules. Reading it
    * is also what keeps enough bounties open — there is no cron to fail.
    */
@@ -589,6 +676,296 @@ export function createRoutes(options: RouteOptions) {
       at: historic.at,
       source: 'CoinGecko',
     });
+  });
+
+  /**
+   * One public question about a chit, before anybody commits.
+   *
+   * `packages/core/src/question.ts` explains why this exists and why it is not a chat. The rules the
+   * route enforces, and what each is for:
+   *
+   *  - **Only on a chit nobody has taken.** After countersigning there is an agreement and the
+   *    amendment mechanic is the right tool; a question then would be a second, weaker channel for
+   *    the same thing.
+   *  - **Signed, and attributed from the signature.** The asker is derived from the public key, never
+   *    read from the body, so nobody can ask under another wallet's name.
+   *  - **Not by the author.** Somebody asking themselves a question in public is planting a FAQ, and
+   *    a board where that is possible fills up with it.
+   *  - **One per wallet per chit**, enforced by a unique index rather than by this check alone.
+   */
+  app.post('/api/chits/:id/questions', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    if (stored.countersignedAt || stored.settledTx || stored.declinedAt) {
+      return c.json(
+        { code: 'not-open', error: 'This chit already has both parties, so questions belong in a change instead.' },
+        409,
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const record = body as Record<string, unknown>;
+    const signature = record['signature'];
+    const text = typeof record['text'] === 'string' ? record['text'] : '';
+    const nonce = typeof record['nonce'] === 'string' ? record['nonce'] : '';
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'A question has to be signed, so people know who asked.' }, 400);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseQuestion({ chitId: stored.id, nonce, text });
+    } catch (error) {
+      return c.json({ code: 'bad-question', error: error instanceof Error ? error.message : 'Not a valid question.' }, 400);
+    }
+
+    /*
+     * Verified without an expected address, then attributed from the key.
+     *
+     * Anybody may ask — that is the point of a public board — so there is no address to check
+     * against. What must be true is that the signature is real and that the name on the question is
+     * the wallet that made it, which is what deriving the address from the public key guarantees.
+     */
+    const verification = verifySignedText({ text: canonical, publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex });
+    if (!verification.ok) {
+      return c.json({ code: 'bad-signature', error: 'That signature does not check out.' }, 400);
+    }
+
+    const asker = addressFromPublicKey(signature.publicKeyHex);
+    const author = stored.chit.kind === 'race' ? stored.chit.payer : stored.chit.payee || stored.countersigner || '';
+    if (author && asker.replace(/\s/g, '').toUpperCase() === author.replace(/\s/g, '').toUpperCase()) {
+      return c.json({ code: 'own-chit', error: 'You wrote this chit — add what you meant to it instead of asking yourself.' }, 409);
+    }
+
+    const id = chitHash({ ...stored.chit, text: canonical }).replace('chit1:', 'q1:');
+    const asked = await store.addQuestion({
+      id,
+      chitId: stored.id,
+      canonical,
+      text,
+      asker,
+      signature: { publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex },
+      askedAt: Date.now(),
+    });
+    if (!asked) {
+      return c.json({ code: 'already-asked', error: 'You have already asked about this one, and it is still waiting for an answer.' }, 409);
+    }
+
+    await store.recordEvent(stored.id, 'questioned', text.slice(0, 60));
+    return c.json({ questions: await store.questions(stored.id) }, 201);
+  });
+
+  /**
+   * The one answer, from the person whose chit it is.
+   *
+   * Once, and never edited: `answerQuestion` only updates a row that has not been answered. An
+   * answer its author could rewrite after somebody acted on it is not an answer, it is a draft — and
+   * the same argument the reviews rest on applies without change.
+   */
+  app.post('/api/chits/:id/questions/:questionId/answer', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+
+    const question = await store.question(c.req.param('questionId'));
+    if (!question || question.chitId !== stored.id) {
+      return c.json({ code: 'no-question', error: 'No question with that id on this chit.' }, 404);
+    }
+    if (question.answer) {
+      return c.json({ code: 'already-answered', error: 'This question already has its answer.' }, 409);
+    }
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const record = body as Record<string, unknown>;
+    const signature = record['signature'];
+    const text = typeof record['text'] === 'string' ? record['text'] : '';
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'An answer has to be signed.' }, 400);
+    }
+
+    const author = stored.chit.kind === 'race' ? stored.chit.payer : stored.chit.payee || stored.countersigner || '';
+    if (!author) {
+      return c.json({ code: 'no-author', error: 'This chit has nobody who can answer for it.' }, 409);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseAnswer({ chitId: stored.id, questionId: question.id, text });
+    } catch (error) {
+      return c.json({ code: 'bad-answer', error: error instanceof Error ? error.message : 'Not a valid answer.' }, 400);
+    }
+
+    // Only the chit's author answers. Anyone else answering for them would be putting words in the
+    // mouth of the person a reader is deciding whether to work with.
+    const verification = verifySignedText({
+      text: canonical,
+      publicKeyHex: signature.publicKeyHex,
+      signatureHex: signature.signatureHex,
+      expectedAddress: author,
+    });
+    if (!verification.ok) {
+      return c.json({ code: 'not-yours', error: 'Only the person whose chit this is can answer a question on it.' }, 403);
+    }
+
+    const answered = await store.answerQuestion(question.id, {
+      canonical,
+      text,
+      signature: { publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex },
+      at: Date.now(),
+    });
+    if (!answered) {
+      return c.json({ code: 'already-answered', error: 'This question already has its answer.' }, 409);
+    }
+
+    await store.recordEvent(stored.id, 'answered-question', text.slice(0, 60));
+    return c.json({ questions: await store.questions(stored.id) });
+  });
+
+  /**
+   * The worker proposes showing this piece of work in public.
+   *
+   * Only on a chit that actually settled, and only by the wallet that was paid for it. Both are what
+   * separate this from every other portfolio: a piece cannot exist without a payment behind it, and
+   * it cannot be somebody else's work.
+   *
+   * Nothing is published by this call. It is a proposal, and the payer has to agree.
+   */
+  app.post('/api/chits/:id/showcase', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    if (!stored.settledTx) {
+      return c.json({ code: 'not-settled', error: 'A portfolio piece needs the payment behind it. This one has not been paid.' }, 409);
+    }
+
+    const worker = stored.chit.payee || stored.countersigner || '';
+    if (!worker) return c.json({ code: 'no-worker', error: 'This chit has nobody who was paid for it.' }, 409);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const record = body as Record<string, unknown>;
+    const signature = record['signature'];
+    const link = typeof record['link'] === 'string' ? record['link'] : '';
+    const caption = typeof record['caption'] === 'string' ? record['caption'] : '';
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'A portfolio piece has to be signed.' }, 400);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseShowcase({ chitId: stored.id, txHash: stored.settledTx.toLowerCase(), link, caption });
+    } catch (error) {
+      return c.json({ code: 'bad-showcase', error: error instanceof Error ? error.message : 'Not a valid piece.' }, 400);
+    }
+
+    const verification = verifySignedText({
+      text: canonical,
+      publicKeyHex: signature.publicKeyHex,
+      signatureHex: signature.signatureHex,
+      expectedAddress: worker,
+    });
+    if (!verification.ok) {
+      return c.json({ code: 'not-yours', error: 'Only the person who was paid for this work can offer it as a piece.' }, 403);
+    }
+
+    const proposed = await store.proposeShowcase({
+      chitId: stored.id,
+      canonical,
+      link,
+      caption,
+      worker,
+      workerSignature: { publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex },
+      proposedAt: Date.now(),
+    });
+    if (!proposed) {
+      return c.json({ code: 'already-published', error: 'This piece is already published, and a published piece cannot be changed.' }, 409);
+    }
+
+    await store.recordEvent(stored.id, 'showcase-proposed', link.slice(0, 60));
+    return c.json({ showcase: await store.showcase(stored.id) }, 201);
+  });
+
+  /**
+   * The payer agrees to it being shown — the second signature, and the reason this is safe.
+   *
+   * The deliverable may be the client's unreleased work. A worker who could publish alone would be
+   * one bad judgement away from doing real harm to somebody who trusted them, so the client signs
+   * the same bytes or nothing is published at all.
+   */
+  app.post('/api/chits/:id/showcase/agree', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+
+    const piece = await store.showcase(stored.id);
+    if (!piece) return c.json({ code: 'no-showcase', error: 'Nothing has been offered as a piece on this chit.' }, 404);
+    if (piece.agreed) return c.json({ code: 'already-published', error: 'This piece is already published.' }, 409);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const signature = (body as Record<string, unknown>)['signature'];
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'Agreeing has to be signed.' }, 400);
+    }
+
+    /*
+     * Verified against the bytes **on the row**, not against anything in the request.
+     *
+     * That is what makes the agreement an agreement to a specific piece: if the worker changed the
+     * link after the payer read it, the signature is over the old text and this refuses.
+     */
+    const verification = verifySignedText({
+      text: piece.canonical,
+      publicKeyHex: signature.publicKeyHex,
+      signatureHex: signature.signatureHex,
+      expectedAddress: stored.chit.payer,
+    });
+    if (!verification.ok) {
+      return c.json({ code: 'not-yours', error: 'Only the person who paid for this work can agree to it being shown.' }, 403);
+    }
+
+    const agreed = await store.agreeShowcase(
+      stored.id,
+      piece.canonical,
+      { publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex },
+      Date.now(),
+    );
+    if (!agreed) {
+      return c.json({ code: 'changed', error: 'That piece changed while you were reading it. Open it again.' }, 409);
+    }
+
+    await store.recordEvent(stored.id, 'showcase-agreed', piece.link.slice(0, 60));
+    return c.json({ showcase: await store.showcase(stored.id) });
+  });
+
+  /** The piece on one chit, whatever state it is in. */
+  app.get('/api/chits/:id/showcase', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    const piece = await store.showcase(stored.id);
+    return piece ? c.json({ showcase: piece }) : c.json({ showcase: null });
+  });
+
+  /** Every question on a chit, with its answer. Public, because that is the whole design. */
+  app.get('/api/chits/:id/questions', async (c) => {
+    const stored = await store.get(c.req.param('id'));
+    if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
+    return c.json({ questions: await store.questions(stored.id) });
   });
 
   /**
@@ -807,7 +1184,21 @@ export function createRoutes(options: RouteOptions) {
     const address = c.req.param('address');
     const chits = await store.forAddress(address, 500);
     const height = options.watcher?.stats.lastHeight || (await options.currentHeight?.().catch(() => 0)) || 0;
-    return c.json(presentProfile(profile(address, chits, height)));
+    /*
+     * The published pieces come from their own store rather than being derived from the chits above.
+     * Only a piece both parties signed is ever returned by `showcasesFor`, so a record cannot show
+     * work the client never agreed to — the guarantee lives in the query, not in this route.
+     */
+    const pieces = await store.showcasesFor(address, 24);
+    return c.json({
+      ...presentProfile(profile(address, chits, height)),
+      showcase: pieces.map((piece) => ({
+        chitId: piece.chitId,
+        link: piece.link,
+        caption: piece.caption,
+        at: piece.agreed?.at ?? piece.proposedAt,
+      })),
+    });
   });
 
   return app;

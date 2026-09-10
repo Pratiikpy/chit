@@ -19,6 +19,120 @@
 import Database from 'better-sqlite3';
 import type { Chit } from '@chit/core';
 
+/** A question asked about a chit, with its one answer when there is one. */
+interface QuestionRow {
+  id: string;
+  chit_id: string;
+  canonical: string;
+  text: string;
+  asker: string;
+  asker_public_key: string;
+  asker_signature: string;
+  asked_at: number;
+  answer_canonical: string | null;
+  answer_text: string | null;
+  answer_public_key: string | null;
+  answer_signature: string | null;
+  answered_at: number | null;
+}
+
+function rowToQuestion(row: QuestionRow): StoredQuestion {
+  return {
+    id: row.id,
+    chitId: row.chit_id,
+    canonical: row.canonical,
+    text: row.text,
+    asker: row.asker,
+    signature: { publicKeyHex: row.asker_public_key, signatureHex: row.asker_signature },
+    askedAt: row.asked_at,
+    ...(row.answered_at !== null && row.answer_canonical !== null
+      ? {
+          answer: {
+            canonical: row.answer_canonical,
+            text: row.answer_text ?? '',
+            signature: { publicKeyHex: row.answer_public_key ?? '', signatureHex: row.answer_signature ?? '' },
+            at: row.answered_at,
+          },
+        }
+      : {}),
+  };
+}
+
+export interface StoredQuestion {
+  /** The question's own digest. Its identity, and what an answer names. */
+  id: string;
+  chitId: string;
+  /** The exact bytes the asker signed. Kept verbatim, never rebuilt from the columns. */
+  canonical: string;
+  text: string;
+  /** Derived from the signature, so nobody can ask under somebody else's name. */
+  asker: string;
+  signature: { publicKeyHex: string; signatureHex: string };
+  askedAt: number;
+  answer?: {
+    canonical: string;
+    text: string;
+    signature: { publicKeyHex: string; signatureHex: string };
+    at: number;
+  };
+}
+
+export interface StoredAnswer {
+  canonical: string;
+  text: string;
+  signature: { publicKeyHex: string; signatureHex: string };
+  at: number;
+}
+
+/** A portfolio piece. Published only when `agreed` is present — see `showcase.ts`. */
+export interface StoredShowcase {
+  chitId: string;
+  /** The exact bytes both parties sign. Kept verbatim, never rebuilt from the columns. */
+  canonical: string;
+  link: string;
+  caption: string;
+  /** The wallet that did the work and proposed showing it. */
+  worker: string;
+  workerSignature: { publicKeyHex: string; signatureHex: string };
+  proposedAt: number;
+  /** Absent until the payer has agreed. Its absence is what keeps a piece unpublished. */
+  agreed?: { signature: { publicKeyHex: string; signatureHex: string }; at: number };
+}
+
+interface ShowcaseRow {
+  chit_id: string;
+  canonical: string;
+  link: string;
+  caption: string;
+  worker: string;
+  worker_public_key: string;
+  worker_signature: string;
+  proposed_at: number;
+  payer_public_key: string | null;
+  payer_signature: string | null;
+  agreed_at: number | null;
+}
+
+function rowToShowcase(row: ShowcaseRow): StoredShowcase {
+  return {
+    chitId: row.chit_id,
+    canonical: row.canonical,
+    link: row.link,
+    caption: row.caption,
+    worker: row.worker,
+    workerSignature: { publicKeyHex: row.worker_public_key, signatureHex: row.worker_signature },
+    proposedAt: row.proposed_at,
+    ...(row.agreed_at !== null && row.payer_signature !== null
+      ? {
+          agreed: {
+            signature: { publicKeyHex: row.payer_public_key ?? '', signatureHex: row.payer_signature },
+            at: row.agreed_at,
+          },
+        }
+      : {}),
+  };
+}
+
 export interface StoredChit {
   id: string;
   canonical: string;
@@ -102,6 +216,14 @@ export interface StoredReview {
 /** Every state a chit passes through. Append-only, so the history is never rewritten. */
 export type ChitEvent =
   | 'created'
+  // Asking and answering are on the chit's timeline like everything else, so the history of what
+  // was clarified before somebody committed is readable next to the commitment itself.
+  | 'questioned'
+  | 'answered-question'
+  // Offering work as a portfolio piece, and the client agreeing to it being shown. Both are on the
+  // chit's timeline because both are things the two of them did about this job.
+  | 'showcase-proposed'
+  | 'showcase-agreed'
   | 'countersigned'
   | 'settled'
   | 'expired'
@@ -158,6 +280,58 @@ CREATE INDEX IF NOT EXISTS idx_chits_payer   ON chits(payer);
 CREATE INDEX IF NOT EXISTS idx_chits_payee   ON chits(payee);
 CREATE INDEX IF NOT EXISTS idx_chits_settled ON chits(settled_at);
 CREATE INDEX IF NOT EXISTS idx_chits_open    ON chits(settled_at, deadline_block);
+
+-- Questions asked about a chit before anybody commits, and their one answer.
+--
+-- A separate table rather than a column, because a chit may carry several questions and each is a
+-- separately signed object with its own asker. The answer columns sit on the row rather than in a
+-- second table for the opposite reason: there is exactly one answer per question, for ever, so a
+-- table would model a relationship the product does not have.
+CREATE TABLE IF NOT EXISTS chit_questions (
+  id                TEXT PRIMARY KEY,
+  chit_id           TEXT NOT NULL,
+  canonical         TEXT NOT NULL,
+  text              TEXT NOT NULL,
+  asker             TEXT NOT NULL,
+  asker_public_key  TEXT NOT NULL,
+  asker_signature   TEXT NOT NULL,
+  asked_at          INTEGER NOT NULL,
+  answer_canonical  TEXT,
+  answer_text       TEXT,
+  answer_public_key TEXT,
+  answer_signature  TEXT,
+  answered_at       INTEGER,
+  FOREIGN KEY (chit_id) REFERENCES chits(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_questions_chit ON chit_questions(chit_id, asked_at);
+-- One question per wallet per chit. A UNIQUE index rather than a check in the route: the rule then
+-- holds even if a second caller reaches the store by another path, which is the only kind of
+-- guarantee worth having about spam.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_one_each ON chit_questions(chit_id, asker);
+
+-- A portfolio piece: a settled chit whose work both parties agreed to show.
+--
+-- One row per chit, because a chit is one piece of work. The worker proposes and the payer
+-- confirms over the same canonical text, and only a row with both signatures is ever published --
+-- which is why the confirming columns are nullable and the published check is on them, not on a
+-- flag somebody could set.
+CREATE TABLE IF NOT EXISTS chit_showcases (
+  chit_id            TEXT PRIMARY KEY,
+  canonical          TEXT NOT NULL,
+  link               TEXT NOT NULL,
+  caption            TEXT NOT NULL,
+  worker             TEXT NOT NULL,
+  worker_public_key  TEXT NOT NULL,
+  worker_signature   TEXT NOT NULL,
+  proposed_at        INTEGER NOT NULL,
+  payer_public_key   TEXT,
+  payer_signature    TEXT,
+  agreed_at          INTEGER,
+  FOREIGN KEY (chit_id) REFERENCES chits(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_showcases_worker ON chit_showcases(worker, agreed_at);
 
 CREATE TABLE IF NOT EXISTS chit_events (
   id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -484,6 +658,209 @@ export class ChitStore {
       )
       .all(key, key, key, key, limit) as ChitRow[];
     return rows.map(rowToStored);
+  }
+
+  /**
+   * The board's inputs: every open race and quote, plus the settled history of their authors.
+   *
+   * Two indexed queries rather than a table scan. The first is the candidate set and is bounded by
+   * `limit`; the second is what the ranking needs to tell a proven wallet from an unknown one, and
+   * is deliberately **not** bounded by the same limit — truncating somebody's history would silently
+   * demote them, which is the one failure in a ranking that nobody can see and nobody can appeal.
+   *
+   * The `IN` list is built from the authors we just found, so it is at most `limit` addresses. On a
+   * corpus where that stops being a sensible size, this is the method to change; nothing above it
+   * knows how the rows were fetched.
+   */
+  boardInputs(currentBlock: number, limit = 500): StoredChit[] {
+    const open = this.#db
+      .prepare(
+        `SELECT * FROM chits
+          WHERE kind IN ('race', 'quote')
+            AND settled_tx IS NULL
+            AND countersigned_at IS NULL
+            AND declined_at IS NULL
+            AND deadline_block > ?
+          ORDER BY created_at DESC LIMIT ?`,
+      )
+      .all(currentBlock, limit) as ChitRow[];
+
+    const candidates = open.map(rowToStored);
+    if (candidates.length === 0) return [];
+
+    /*
+     * Authors, normalised the way `forAddress` normalises — a payer stored with spaces and a
+     * countersigner derived from a key are the same wallet, and comparing raw strings would return
+     * an empty history for real people. That exact bug already cost this codebase the Activity
+     * screen once; the header on `forAddress` records it.
+     */
+    const authors = new Set<string>();
+    for (const one of candidates) {
+      const author = one.chit.kind === 'race' ? one.chit.payer : one.chit.payee || one.countersigner || '';
+      if (author) authors.add(author.replace(/\s/g, '').toUpperCase());
+    }
+    if (authors.size === 0) return candidates;
+
+    const marks = [...authors].map(() => '?').join(',');
+    const keys = [...authors];
+    const history = this.#db
+      .prepare(
+        `SELECT * FROM chits
+          WHERE REPLACE(UPPER(payer), ' ', '') IN (${marks})
+             OR REPLACE(UPPER(payee), ' ', '') IN (${marks})
+             OR REPLACE(UPPER(COALESCE(countersigner, '')), ' ', '') IN (${marks})`,
+      )
+      .all(...keys, ...keys, ...keys) as ChitRow[];
+
+    // De-duplicated by id: a candidate is usually also in its author's history.
+    const byId = new Map<string, StoredChit>();
+    for (const one of candidates) byId.set(one.id, one);
+    for (const row of history) {
+      const one = rowToStored(row);
+      if (!byId.has(one.id)) byId.set(one.id, one);
+    }
+    return [...byId.values()];
+  }
+
+  /**
+   * Ask one question about a chit.
+   *
+   * `INSERT OR IGNORE` against the unique index, so a second question from the same wallet is a
+   * refusal rather than a second row. Returning whether it landed lets the route say "you already
+   * asked" instead of pretending to accept it.
+   */
+  addQuestion(row: StoredQuestion): boolean {
+    const result = this.#db
+      .prepare(
+        `INSERT OR IGNORE INTO chit_questions
+           (id, chit_id, canonical, text, asker, asker_public_key, asker_signature, asked_at)
+         VALUES (@id, @chitId, @canonical, @text, @asker, @askerPublicKey, @askerSignature, @askedAt)`,
+      )
+      .run({
+        id: row.id,
+        chitId: row.chitId,
+        canonical: row.canonical,
+        text: row.text,
+        asker: row.asker,
+        askerPublicKey: row.signature.publicKeyHex,
+        askerSignature: row.signature.signatureHex,
+        askedAt: row.askedAt,
+      });
+    return result.changes > 0;
+  }
+
+  /**
+   * Answer one, once.
+   *
+   * The `answered_at IS NULL` in the WHERE is the whole rule: an answer cannot be edited or
+   * replaced, which is the same promise the reviews make and for the same reason — a record its
+   * author can rewrite afterwards is not a record.
+   */
+  answerQuestion(id: string, answer: StoredAnswer): boolean {
+    const result = this.#db
+      .prepare(
+        `UPDATE chit_questions
+            SET answer_canonical = @canonical,
+                answer_text = @text,
+                answer_public_key = @publicKeyHex,
+                answer_signature = @signatureHex,
+                answered_at = @at
+          WHERE id = @id AND answered_at IS NULL`,
+      )
+      .run({
+        id,
+        canonical: answer.canonical,
+        text: answer.text,
+        publicKeyHex: answer.signature.publicKeyHex,
+        signatureHex: answer.signature.signatureHex,
+        at: answer.at,
+      });
+    return result.changes > 0;
+  }
+
+  /** Every question on a chit, oldest first — the order they were asked is the order to read them. */
+  questions(chitId: string): StoredQuestion[] {
+    const rows = this.#db
+      .prepare('SELECT * FROM chit_questions WHERE chit_id = ? ORDER BY asked_at ASC')
+      .all(chitId) as QuestionRow[];
+    return rows.map(rowToQuestion);
+  }
+
+  question(id: string): StoredQuestion | undefined {
+    const row = this.#db.prepare('SELECT * FROM chit_questions WHERE id = ?').get(id) as QuestionRow | undefined;
+    return row ? rowToQuestion(row) : undefined;
+  }
+
+  /**
+   * The worker proposes a piece. Replaces an earlier unconfirmed proposal, never a confirmed one.
+   *
+   * Re-proposing before the payer has agreed is an ordinary thing to want — a wrong link, a better
+   * caption. Re-proposing *after* they agreed would let the worker swap the published work for
+   * something the payer never saw, which is the whole reason the second signature exists.
+   */
+  proposeShowcase(row: StoredShowcase): boolean {
+    const result = this.#db
+      .prepare(
+        `INSERT INTO chit_showcases
+           (chit_id, canonical, link, caption, worker, worker_public_key, worker_signature, proposed_at)
+         VALUES (@chitId, @canonical, @link, @caption, @worker, @publicKeyHex, @signatureHex, @at)
+         ON CONFLICT(chit_id) DO UPDATE SET
+           canonical = excluded.canonical,
+           link = excluded.link,
+           caption = excluded.caption,
+           worker = excluded.worker,
+           worker_public_key = excluded.worker_public_key,
+           worker_signature = excluded.worker_signature,
+           proposed_at = excluded.proposed_at
+         WHERE chit_showcases.agreed_at IS NULL`,
+      )
+      .run({
+        chitId: row.chitId,
+        canonical: row.canonical,
+        link: row.link,
+        caption: row.caption,
+        worker: row.worker,
+        publicKeyHex: row.workerSignature.publicKeyHex,
+        signatureHex: row.workerSignature.signatureHex,
+        at: row.proposedAt,
+      });
+    return result.changes > 0;
+  }
+
+  /**
+   * The payer agrees, once, to the exact bytes that are stored.
+   *
+   * `canonical = @canonical` in the WHERE is the load-bearing clause: it refuses an agreement to
+   * anything other than what is on the row right now, so a proposal that changed between the payer
+   * reading it and confirming it cannot be confirmed by accident.
+   */
+  agreeShowcase(chitId: string, canonical: string, signature: { publicKeyHex: string; signatureHex: string }, at: number): boolean {
+    const result = this.#db
+      .prepare(
+        `UPDATE chit_showcases
+            SET payer_public_key = @publicKeyHex, payer_signature = @signatureHex, agreed_at = @at
+          WHERE chit_id = @chitId AND agreed_at IS NULL AND canonical = @canonical`,
+      )
+      .run({ chitId, canonical, publicKeyHex: signature.publicKeyHex, signatureHex: signature.signatureHex, at });
+    return result.changes > 0;
+  }
+
+  showcase(chitId: string): StoredShowcase | undefined {
+    const row = this.#db.prepare('SELECT * FROM chit_showcases WHERE chit_id = ?').get(chitId) as ShowcaseRow | undefined;
+    return row ? rowToShowcase(row) : undefined;
+  }
+
+  /** A wallet's published pieces, newest first. Only ones both parties signed are ever returned. */
+  showcasesFor(address: string, limit = 24): StoredShowcase[] {
+    const key = address.replace(/\s/g, '').toUpperCase();
+    const rows = this.#db
+      .prepare(
+        `SELECT * FROM chit_showcases
+          WHERE REPLACE(UPPER(worker), ' ', '') = ? AND agreed_at IS NOT NULL
+          ORDER BY agreed_at DESC LIMIT ?`,
+      )
+      .all(key, limit) as ShowcaseRow[];
+    return rows.map(rowToShowcase);
   }
 
   /** Look a chit up by the transaction that settled it — the `/v/<txhash>` path. */

@@ -11,7 +11,7 @@
  */
 
 import './styles.css';
-import { aboutScreen, activityScreen, bountyBoardScreen, brokenScreen, chitScreen, composeScreen, notFoundScreen, profileScreen, verifyScreen } from './screens.ts';
+import { aboutScreen, activityScreen, boardScreen, bountyBoardScreen, brokenScreen, chitScreen, composeScreen, notFoundScreen, profileScreen, verifyScreen } from './screens.ts';
 import { initLanguage } from './i18n.ts';
 
 /*
@@ -60,6 +60,24 @@ async function route(): Promise<void> {
     // list of drafts and unpaid work would be the wrong page for that stranger to open.
     const profileMatch = /^\/p\/(.+)$/.exec(path);
     if (profileMatch?.[1]) return await profileScreen(decodeURIComponent(profileMatch[1]), navigate);
+
+    /*
+     * The board carries its query in the URL, so a search is a link somebody can send. That is the
+     * whole reason it reads `location.search` rather than keeping the query in a variable: "here is
+     * the translation work on chit" has to be a thing you can paste into a chat.
+     */
+    if (path === '/board') {
+      const params = new URLSearchParams(window.location.search);
+      const kind = params.get('kind');
+      const sort = params.get('sort');
+      return await boardScreen(navigate, {
+        ...(params.get('q') ? { q: params.get('q') as string } : {}),
+        ...(kind === 'work' || kind === 'offer' ? { kind } : {}),
+        ...(sort === 'best' || sort === 'newest' || sort === 'closing' || sort === 'highest' || sort === 'lowest'
+          ? { sort }
+          : {}),
+      });
+    }
 
     if (path === '/bounty') return await bountyBoardScreen(navigate);
     if (path === '/about') return aboutScreen(navigate);

@@ -188,6 +188,27 @@ export const api = {
     return request<LedgerView>(`/api/addresses/${encodeURIComponent(address)}/ledger`);
   },
 
+  /**
+   * The board: open work and open offers, ranked.
+   *
+   * Every argument is optional and every one is a *filter*, so an empty call is a browse. The server
+   * refuses a filter it does not understand rather than ignoring it — see `/api/board` — which is
+   * why this passes them through untouched instead of sanitising them here and hiding the mistake.
+   */
+  board(query: BoardQuery = {}) {
+    const params = new URLSearchParams();
+    if (query.q) params.set('q', query.q);
+    if (query.kind) params.set('kind', query.kind);
+    if (query.sort) params.set('sort', query.sort);
+    if (query.currency) params.set('currency', query.currency);
+    if (query.min !== undefined) params.set('min', String(query.min));
+    if (query.max !== undefined) params.set('max', String(query.max));
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    if (query.cursor !== undefined) params.set('cursor', String(query.cursor));
+    const qs = params.toString();
+    return request<BoardView>(`/api/board${qs ? `?${qs}` : ''}`);
+  },
+
   /** The pool in public: address, balance, open bounties, every payout, the rules. */
   bounty() {
     return request<BountyView>('/api/bounty');
@@ -232,6 +253,48 @@ export const api = {
    * `known: false` is a normal answer and means the client says nothing at all — a hint
    * that cannot be given is not an error worth showing anybody.
    */
+  /** The piece offered on this chit, if any. Null when nobody has offered one. */
+  showcase(id: string) {
+    return request<{ showcase: ApiShowcase | null }>(`/api/chits/${encodeURIComponent(id)}/showcase`);
+  },
+
+  /** The worker offers their work as a portfolio piece. Nothing is published by this alone. */
+  offerShowcase(id: string, signature: { publicKeyHex: string; signatureHex: string }, link: string, caption: string) {
+    return request<{ showcase: ApiShowcase }>(`/api/chits/${encodeURIComponent(id)}/showcase`, {
+      method: 'POST',
+      body: JSON.stringify({ signature, link, caption }),
+    });
+  },
+
+  /** The payer agrees to it being shown — the second signature, and what publishes it. */
+  agreeShowcase(id: string, signature: { publicKeyHex: string; signatureHex: string }) {
+    return request<{ showcase: ApiShowcase }>(`/api/chits/${encodeURIComponent(id)}/showcase/agree`, {
+      method: 'POST',
+      body: JSON.stringify({ signature }),
+    });
+  },
+
+  /** Every question asked about a chit, with its answer. Public — no wallet needed to read. */
+  questions(id: string) {
+    return request<{ questions: ApiQuestion[] }>(`/api/chits/${encodeURIComponent(id)}/questions`);
+  },
+
+  /** Ask one, signed, before committing to anything. */
+  ask(id: string, signature: { publicKeyHex: string; signatureHex: string }, nonce: string, text: string) {
+    return request<{ questions: ApiQuestion[] }>(`/api/chits/${encodeURIComponent(id)}/questions`, {
+      method: 'POST',
+      body: JSON.stringify({ signature, nonce, text }),
+    });
+  },
+
+  /** Answer one, once, as the person whose chit it is. */
+  answerQuestion(id: string, questionId: string, signature: { publicKeyHex: string; signatureHex: string }, text: string) {
+    return request<{ questions: ApiQuestion[] }>(
+      `/api/chits/${encodeURIComponent(id)}/questions/${encodeURIComponent(questionId)}/answer`,
+      { method: 'POST', body: JSON.stringify({ signature, text }) },
+    );
+  },
+
   /** Sign a review of the other side, bound to the payment that settled the chit. */
   review(id: string, signature: { publicKeyHex: string; signatureHex: string }, rating: number, text: string) {
     return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/review`, {
@@ -253,6 +316,59 @@ export const api = {
     return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' });
   },
 };
+
+/** What a caller may narrow the board by. Everything optional; an empty query is a browse. */
+/** A portfolio piece. `agreed` present means both signed it and it is public. */
+export interface ApiShowcase {
+  chitId: string;
+  /** The exact bytes both parties sign. The payer signs this, verbatim. */
+  canonical: string;
+  link: string;
+  caption: string;
+  worker: string;
+  proposedAt: number;
+  agreed?: { at: number };
+}
+
+/** A question on a chit, with its one answer when it has been given. */
+export interface ApiQuestion {
+  id: string;
+  chitId: string;
+  text: string;
+  /** Derived from the signature by the server, so it names the wallet that actually asked. */
+  asker: string;
+  askedAt: number;
+  answer?: { text: string; at: number };
+}
+
+export interface BoardQuery {
+  q?: string;
+  kind?: 'work' | 'offer';
+  sort?: 'best' | 'newest' | 'closing' | 'highest' | 'lowest';
+  currency?: string;
+  min?: bigint | number;
+  max?: bigint | number;
+  limit?: number;
+  cursor?: number;
+}
+
+export interface BoardEntryView {
+  kind: 'work' | 'offer';
+  author: string;
+  blocksLeft: number;
+  /** Published per entry so a worker can see why they rank where they do. */
+  why: { relevance: number; performance: number; freshness: number; newcomer: boolean };
+  /** What a stranger needs to judge the author, without opening anything. */
+  standing: { done: number; clients: number; rating: number | null; reviews: number };
+  chit: ApiChit;
+}
+
+export interface BoardView {
+  currentBlock: number;
+  total: number;
+  next: number | null;
+  entries: BoardEntryView[];
+}
 
 export interface BountyView {
   address: string;
@@ -290,4 +406,11 @@ export interface ProfileView {
     txHash: string;
     counterparty: string | null;
   }>;
+  /**
+   * Work both parties agreed to show, newest first.
+   *
+   * Only ever contains pieces with two signatures — the server has no way to return an unagreed one
+   * — so a record can never display work a client did not consent to.
+   */
+  showcase: Array<{ chitId: string; link: string; caption: string; at: number }>;
 }

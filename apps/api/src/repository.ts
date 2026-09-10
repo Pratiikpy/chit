@@ -15,9 +15,9 @@
  */
 
 import type { Chit } from '@chit/core';
-import { ChitStore, type ChitEvent, type StoredChit, type StoredReview } from './db.ts';
+import { ChitStore, type ChitEvent, type StoredAnswer, type StoredChit, type StoredQuestion, type StoredReview, type StoredShowcase } from './db.ts';
 
-export type { ChitEvent, StoredChit, StoredReview };
+export type { ChitEvent, StoredAnswer, StoredChit, StoredQuestion, StoredReview, StoredShowcase };
 
 export interface Signature {
   publicKeyHex: string;
@@ -47,6 +47,40 @@ export interface ChitRepository {
   /** Countersigned but unpaid — what a watcher sweeps. */
   awaitingSettlement(): Promise<StoredChit[]>;
   forAddress(address: string, limit?: number): Promise<StoredChit[]>;
+  /**
+   * Everything `board()` needs in one call: the open chits, plus the settled history of whoever
+   * authored them.
+   *
+   * One method rather than two because the two halves are useless apart — a candidate with no
+   * history ranks on an empty record, which is exactly the bug the honeymoon floor exists to make
+   * survivable and not one to introduce deliberately. Returning them together also lets each
+   * backend decide how to get them: SQLite does it in two indexed queries, the object store by
+   * listing what it must.
+   */
+  boardInputs(currentBlock: number, limit?: number): Promise<StoredChit[]>;
+
+  /**
+   * Questions asked about a chit before anybody committed, and their one answer.
+   *
+   * On the same seam as everything else so the object store has to implement them too. A feature
+   * that only worked on the self-hosted deployment would be a feature that quietly disappears on the
+   * one a judge opens.
+   */
+  addQuestion(question: StoredQuestion): Promise<boolean>;
+  answerQuestion(id: string, answer: StoredAnswer): Promise<boolean>;
+  questions(chitId: string): Promise<StoredQuestion[]>;
+  question(id: string): Promise<StoredQuestion | undefined>;
+
+  /**
+   * Portfolio pieces: proposed by the worker, agreed by the payer, published only with both.
+   *
+   * On the seam so the object store implements them too — a portfolio that existed only on the
+   * self-hosted deployment would be a portfolio that vanishes on the one a judge opens.
+   */
+  proposeShowcase(showcase: StoredShowcase): Promise<boolean>;
+  agreeShowcase(chitId: string, canonical: string, signature: Signature, at: number): Promise<boolean>;
+  showcase(chitId: string): Promise<StoredShowcase | undefined>;
+  showcasesFor(address: string, limit?: number): Promise<StoredShowcase[]>;
   byTransaction(hash: string): Promise<StoredChit | undefined>;
   events(id: string): Promise<EventRecord[]>;
   watchedAddresses(): Promise<string[]>;
@@ -100,6 +134,42 @@ export class SqliteRepository implements ChitRepository {
 
   async forAddress(address: string, limit = 50) {
     return this.store.forAddress(address, limit);
+  }
+
+  async boardInputs(currentBlock: number, limit = 500) {
+    return this.store.boardInputs(currentBlock, limit);
+  }
+
+  async addQuestion(question: StoredQuestion) {
+    return this.store.addQuestion(question);
+  }
+
+  async answerQuestion(id: string, answer: StoredAnswer) {
+    return this.store.answerQuestion(id, answer);
+  }
+
+  async questions(chitId: string) {
+    return this.store.questions(chitId);
+  }
+
+  async question(id: string) {
+    return this.store.question(id);
+  }
+
+  async proposeShowcase(showcase: StoredShowcase) {
+    return this.store.proposeShowcase(showcase);
+  }
+
+  async agreeShowcase(chitId: string, canonical: string, signature: Signature, at: number) {
+    return this.store.agreeShowcase(chitId, canonical, signature, at);
+  }
+
+  async showcase(chitId: string) {
+    return this.store.showcase(chitId);
+  }
+
+  async showcasesFor(address: string, limit = 24) {
+    return this.store.showcasesFor(address, limit);
   }
 
   async byTransaction(hash: string) {

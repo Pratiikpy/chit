@@ -42,8 +42,11 @@ import type {
   CreateChitInput,
   EventRecord,
   Signature,
+  StoredAnswer,
   StoredChit,
+  StoredQuestion,
   StoredReview,
+  StoredShowcase,
 } from './repository.ts';
 
 /** Blob pathnames need no `chit1:` prefix — the digest alone is unique. */
@@ -402,6 +405,180 @@ export class BlobRepository implements ChitRepository {
     return loaded
       .flatMap((entry) => (entry ? [entry.stored] : []))
       .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+  }
+
+  /**
+   * The board's inputs on an object store: the open set, then each author's history.
+   *
+   * There is an `open/` prefix already — the settlement watcher's work queue — and every chit the
+   * board can show is in it by definition, because both mean "signed and not yet settled". Reusing
+   * it costs nothing and, more importantly, cannot drift from what the rest of the system considers
+   * outstanding.
+   *
+   * The history is fetched per author through `forAddress`, which pages the whole prefix before it
+   * truncates. That is more requests than SQLite's single `IN` query and it is the honest cost of a
+   * store with no indexes; the `addr/` prefix keeps each one small, and the author set is bounded by
+   * the open set above it.
+   */
+  async boardInputs(currentBlock: number, limit = 500): Promise<StoredChit[]> {
+    const { blobs } = await list({ prefix: 'open/', limit, ...this.#opts });
+    const ids = blobs.map((blob) => blob.pathname.slice('open/'.length).replace(/\.json$/, ''));
+    const loaded = await Promise.all(ids.map((key) => this.#load(`chit1:${key}`)));
+
+    const byId = new Map<string, StoredChit>();
+    const authors = new Set<string>();
+    for (const entry of loaded) {
+      if (!entry) continue;
+      const one = entry.stored;
+      byId.set(one.id, one);
+
+      const kind = one.chit.kind;
+      if (kind !== 'race' && kind !== 'quote') continue;
+      if (one.countersignedAt || one.settledAt || one.declinedAt) continue;
+      if (one.chit.deadlineBlock <= currentBlock) continue;
+
+      const author = kind === 'race' ? one.chit.payer : one.chit.payee || one.countersigner || '';
+      if (author) authors.add(author);
+    }
+
+    /*
+     * Sequential rather than `Promise.all`, on purpose. Each `forAddress` is itself a paged listing
+     * plus a fan-out of loads, and firing them all at once against an object store is how a page
+     * that works with five authors falls over with fifty. The board is not on the hot path of
+     * anybody's payment.
+     */
+    for (const author of authors) {
+      for (const one of await this.forAddress(author, 200)) {
+        if (!byId.has(one.id)) byId.set(one.id, one);
+      }
+    }
+
+    return [...byId.values()];
+  }
+
+  /**
+   * Questions on an object store, kept as one object per chit rather than one per question.
+   *
+   * A chit carries a handful of questions at most, and reading them is a single fetch on the path
+   * somebody is already waiting on. One blob per question would turn a chit page into a listing plus
+   * N loads to show three sentences.
+   *
+   * **Honest limitation, and it is the same one this file's header records for countersigning:** an
+   * object store has no compare-and-swap, so "one question per wallet" and "answered only once" are
+   * read-then-write here rather than atomic. Two writes inside the same few milliseconds could lose
+   * one. On SQLite both are a unique index and a conditional UPDATE, and genuinely atomic — which is
+   * why the self-hosted deployment stays the reference one.
+   */
+  async addQuestion(question: StoredQuestion): Promise<boolean> {
+    const existing = await this.questions(question.chitId);
+    const key = (address: string) => address.replace(/\s/g, '').toUpperCase();
+    if (existing.some((one) => key(one.asker) === key(question.asker))) return false;
+
+    await this.#write(`questions/${keyFor(question.chitId)}.json`, [...existing, question]);
+    return true;
+  }
+
+  async answerQuestion(id: string, answer: StoredAnswer): Promise<boolean> {
+    const found = await this.question(id);
+    if (!found || found.answer) return false;
+
+    const all = await this.questions(found.chitId);
+    let changed = false;
+    const next = all.map((one) => {
+      if (one.id !== id || one.answer) return one;
+      changed = true;
+      return { ...one, answer };
+    });
+    if (!changed) return false;
+
+    await this.#write(`questions/${keyFor(found.chitId)}.json`, next);
+    return true;
+  }
+
+  async questions(chitId: string): Promise<StoredQuestion[]> {
+    return (await this.#read<StoredQuestion[]>(`questions/${keyFor(chitId)}.json`)) ?? [];
+  }
+
+  async question(id: string): Promise<StoredQuestion | undefined> {
+    /*
+     * A question id carries no pointer back to its chit, so this pages the prefix.
+     *
+     * Only the answer route uses it, once, on a path where somebody has already opened the chit —
+     * so the cost is paid rarely and never on a read. Storing a `question/<id> -> chitId` pointer
+     * would be faster and is a second thing that can drift out of step with the list it points into.
+     */
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix: 'questions/', limit: 1000, ...(cursor ? { cursor } : {}), ...this.#opts });
+      for (const blob of page.blobs) {
+        const rows = await this.#read<StoredQuestion[]>(blob.pathname);
+        const found = rows?.find((one) => one.id === id);
+        if (found) return found;
+      }
+      cursor = page.cursor;
+    } while (cursor);
+    return undefined;
+  }
+
+  /**
+   * Portfolio pieces on an object store: one object per chit, plus an index per worker.
+   *
+   * The index exists because a profile has to list somebody's pieces, and listing every showcase in
+   * the store to filter by worker would get slower for everyone each time anybody published
+   * anything. It holds ids only; the pieces themselves are read from their own objects, so the
+   * index can never carry a stale copy of a link.
+   *
+   * **Same honest limitation as the rest of this file:** no compare-and-swap, so "cannot change a
+   * published piece" is read-then-write here and a single conditional UPDATE on SQLite.
+   */
+  async proposeShowcase(showcase: StoredShowcase): Promise<boolean> {
+    const existing = await this.showcase(showcase.chitId);
+    // A published piece is frozen: that is the whole force of the payer's signature.
+    if (existing?.agreed) return false;
+
+    await this.#write(`showcase/${keyFor(showcase.chitId)}.json`, showcase);
+    return true;
+  }
+
+  async agreeShowcase(
+    chitId: string,
+    canonical: string,
+    signature: Signature,
+    at: number,
+  ): Promise<boolean> {
+    const existing = await this.showcase(chitId);
+    // Agreeing to bytes that are no longer the stored ones is refused, exactly as on SQLite: the
+    // payer agreed to a specific piece, not to whatever the worker last wrote.
+    if (!existing || existing.agreed || existing.canonical !== canonical) return false;
+
+    const next: StoredShowcase = { ...existing, agreed: { signature, at } };
+    await this.#write(`showcase/${keyFor(chitId)}.json`, next);
+    await this.#write(`showcase-by/${addrKey(existing.worker)}/${keyFor(chitId)}.json`, { chitId });
+    return true;
+  }
+
+  async showcase(chitId: string): Promise<StoredShowcase | undefined> {
+    return await this.#read<StoredShowcase>(`showcase/${keyFor(chitId)}.json`);
+  }
+
+  async showcasesFor(address: string, limit = 24): Promise<StoredShowcase[]> {
+    const prefix = `showcase-by/${addrKey(address)}/`;
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}), ...this.#opts });
+      for (const blob of page.blobs) {
+        const key = blob.pathname.slice(prefix.length).replace(/\.json$/, '');
+        if (key) ids.push(`chit1:${key}`);
+      }
+      cursor = page.cursor;
+    } while (cursor);
+
+    const loaded = await Promise.all(ids.map((id) => this.showcase(id)));
+    return loaded
+      .flatMap((one) => (one?.agreed ? [one] : []))
+      .sort((a, b) => (b.agreed?.at ?? 0) - (a.agreed?.at ?? 0))
       .slice(0, limit);
   }
 

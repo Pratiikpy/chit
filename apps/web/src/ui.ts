@@ -79,6 +79,8 @@ const ICONS = {
   home: 'M4 11l8-7 8 7M6 10v10h12V10',
   // Closed, so the same path reads as an empty star or a filled one depending on `fill`.
   star: 'M12 3.8l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 10l5.9-.9L12 3.8z',
+  // A magnifier, for the board. Same 24-grid and stroke weight as the rest of the set.
+  search: 'M10.5 4a6.5 6.5 0 1 0 4.05 11.59l4.18 4.18 1.41-1.41-4.18-4.18A6.5 6.5 0 0 0 10.5 4zm0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z',
 } as const;
 
 export type IconName = keyof typeof ICONS;

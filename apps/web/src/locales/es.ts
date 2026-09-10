@@ -529,6 +529,64 @@ const es: Dict = {
     'Tu billetera está en la red de pruebas de Nimiq, pero este chit es de NIM reales. Cambia Nimiq Pay a la red principal y vuelve a intentarlo.',
   'Your wallet is on Nimiq mainnet, but this is a test-network chit. Switch Nimiq Pay to testnet and try again.':
     'Tu billetera está en la red principal de Nimiq, pero este chit es de la red de pruebas. Cambia Nimiq Pay a la red de pruebas y vuelve a intentarlo.',
+
+
+  /* The board — finding work, and being found. */
+  'Board': 'Tablón',
+  'We could not read the chain just now, so we cannot say which chits are still open. Try again in a moment.': 'No hemos podido leer la cadena ahora mismo, así que no podemos decir qué chits siguen abiertos. Inténtalo dentro de un momento.',
+  'logo, translation, video…': 'logo, traducción, vídeo…',
+  'Search the board': 'Buscar en el tablón',
+  'Search': 'Buscar',
+  'Which side of the board': 'Qué lado del tablón',
+  'Everything': 'Todo',
+  'Work': 'Trabajos',
+  'People': 'Personas',
+  'Best match': 'Mejor coincidencia',
+  'Newest': 'Más recientes',
+  'Closing soon': 'Cierra pronto',
+  'Highest paid': 'Mejor pagados',
+  'Order': 'Orden',
+  'New here': 'Nuevo aquí',
+  'Offer': 'Oferta',
+  'closing today': 'cierra hoy',
+  '{n}d left': 'quedan {n} d',
+  'Work with the money already on it, and people offering theirs. Open one to read the whole agreement before you sign anything.': 'Trabajos con el dinero ya puesto, y personas que ofrecen el suyo. Abre uno para leer el acuerdo completo antes de firmar nada.',
+  'Nothing matches that.': 'No hay nada que coincida.',
+  'The board is empty right now.': 'El tablón está vacío ahora mismo.',
+  'Try a shorter word — or post what you need and let somebody come to you.': 'Prueba con una palabra más corta, o publica lo que necesitas y deja que alguien venga a ti.',
+  'Post what you need, or what you can do, and it appears here.': 'Publica lo que necesitas, o lo que sabes hacer, y aparecerá aquí.',
+  '{shown} of {total} open': '{shown} de {total} abiertos',
+  'Show more': 'Mostrar más',
+  '{n} done': '{n} hechos',
+  '★{rating} · {n} done': '★{rating} · {n} hechos',
+
+
+  /* Questions asked in public before anybody commits. */
+  'Questions': 'Preguntas',
+  'Asked in public, so the next person does not have to ask again.': 'Preguntado en público, para que la siguiente persona no tenga que preguntarlo otra vez.',
+  'Answer it in one line': 'Responde en una línea',
+  'Answer': 'Responder',
+  'Not answered yet.': 'Todavía sin responder.',
+  'Your question': 'Tu pregunta',
+  'e.g. does this include the source files?': 'p. ej. ¿incluye los archivos originales?',
+  'Ask in public': 'Preguntar en público',
+  'Ask before you sign. Everyone can see the question and the answer — including you, later.': 'Pregunta antes de firmar. Todo el mundo ve la pregunta y la respuesta, tú incluido más adelante.',
+
+
+  /* Portfolio pieces: paid for, and shown only with the client agreeing. */
+  'Shown as work': 'Mostrado como trabajo',
+  'Both of you signed this, so it is on the public record with the payment beside it.': 'Lo firmasteis los dos, así que está en el registro público con el pago al lado.',
+  'Agree to show it': 'Aceptar que se muestre',
+  'They would like to show this work': 'Quieren mostrar este trabajo',
+  'It goes on their public record with what you paid beside it. Nothing is shown unless you agree.': 'Va a su registro público con lo que pagaste al lado. No se muestra nada sin tu permiso.',
+  'Link to the work': 'Enlace al trabajo',
+  'Update the offer': 'Actualizar la propuesta',
+  'Offer it as a piece': 'Ofrecerlo como muestra',
+  'Show this work': 'Mostrar este trabajo',
+  'Offered. It is not public until they agree.': 'Propuesto. No es público hasta que acepten.',
+  'Put it on your public record, with the payment beside it as proof somebody paid for it. Your client has to agree first.': 'Ponlo en tu registro público, con el pago al lado como prueba de que alguien pagó por ello. Tu cliente tiene que aceptar antes.',
+  'Each piece was paid for, and the client agreed to it being shown.': 'Cada muestra fue pagada, y el cliente aceptó que se mostrara.',
+  'Offer a different deal': 'Proponer otro trato',
 };
 
 export default es;

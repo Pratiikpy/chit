@@ -490,6 +490,64 @@ const de: Dict = {
   'Signing and paying happen in the Nimiq Pay app. Open this there — Nimiq Pay may ask you to confirm the first time.': 'Unterschreiben und Zahlen passieren in der Nimiq Pay App. Öffne das dort – Nimiq Pay fragt beim ersten Mal vielleicht nach einer Bestätigung.',
   'Your wallet is on the Nimiq test network, but this chit is for real NIM. Switch Nimiq Pay to mainnet and try again.': 'Deine Wallet ist im Nimiq-Testnetz, aber dieser Chit ist für echte NIM. Stelle Nimiq Pay auf Mainnet und versuch es noch einmal.',
   'Your wallet is on Nimiq mainnet, but this is a test-network chit. Switch Nimiq Pay to testnet and try again.': 'Deine Wallet ist im Nimiq-Mainnet, aber das ist ein Testnetz-Chit. Stelle Nimiq Pay auf Testnetz und versuch es noch einmal.',
+
+
+  /* The board — finding work, and being found. */
+  'Board': 'Board',
+  'We could not read the chain just now, so we cannot say which chits are still open. Try again in a moment.': 'Wir konnten die Chain gerade nicht lesen und können deshalb nicht sagen, welche Chits noch offen sind. Versuch es gleich noch einmal.',
+  'logo, translation, video…': 'Logo, Übersetzung, Video …',
+  'Search the board': 'Board durchsuchen',
+  'Search': 'Suchen',
+  'Which side of the board': 'Welche Seite des Boards',
+  'Everything': 'Alles',
+  'Work': 'Aufträge',
+  'People': 'Leute',
+  'Best match': 'Beste Treffer',
+  'Newest': 'Neueste',
+  'Closing soon': 'Läuft bald ab',
+  'Highest paid': 'Höchste Bezahlung',
+  'Order': 'Reihenfolge',
+  'New here': 'Neu hier',
+  'Offer': 'Angebot',
+  'closing today': 'läuft heute ab',
+  '{n}d left': 'noch {n} T',
+  'Work with the money already on it, and people offering theirs. Open one to read the whole agreement before you sign anything.': 'Aufträge, auf denen das Geld schon liegt – und Leute, die ihre Zeit anbieten. Öffne einen, um die ganze Vereinbarung zu lesen, bevor du irgendetwas unterschreibst.',
+  'Nothing matches that.': 'Dazu gibt es nichts.',
+  'The board is empty right now.': 'Das Board ist gerade leer.',
+  'Try a shorter word — or post what you need and let somebody come to you.': 'Versuch ein kürzeres Wort – oder stell ein, was du brauchst, und lass jemanden zu dir kommen.',
+  'Post what you need, or what you can do, and it appears here.': 'Stell ein, was du brauchst oder was du kannst – dann steht es hier.',
+  '{shown} of {total} open': '{shown} von {total} offen',
+  'Show more': 'Mehr anzeigen',
+  '{n} done': '{n} erledigt',
+  '★{rating} · {n} done': '★{rating} · {n} erledigt',
+
+
+  /* Questions asked in public before anybody commits. */
+  'Questions': 'Fragen',
+  'Asked in public, so the next person does not have to ask again.': 'Öffentlich gefragt, damit die Nächste nicht noch einmal fragen muss.',
+  'Answer it in one line': 'Antworte in einer Zeile',
+  'Answer': 'Antworten',
+  'Not answered yet.': 'Noch nicht beantwortet.',
+  'Your question': 'Deine Frage',
+  'e.g. does this include the source files?': 'z. B. sind die Quelldateien dabei?',
+  'Ask in public': 'Öffentlich fragen',
+  'Ask before you sign. Everyone can see the question and the answer — including you, later.': 'Frag, bevor du unterschreibst. Frage und Antwort sind für alle sichtbar – auch später für dich.',
+
+
+  /* Portfolio pieces: paid for, and shown only with the client agreeing. */
+  'Shown as work': 'Als Arbeit gezeigt',
+  'Both of you signed this, so it is on the public record with the payment beside it.': 'Ihr habt beide unterschrieben, also steht es öffentlich – mit der Zahlung daneben.',
+  'Agree to show it': 'Zeigen erlauben',
+  'They would like to show this work': 'Sie möchten diese Arbeit zeigen',
+  'It goes on their public record with what you paid beside it. Nothing is shown unless you agree.': 'Es kommt auf ihre öffentliche Seite, mit deinem gezahlten Betrag daneben. Ohne dein Ja wird nichts gezeigt.',
+  'Link to the work': 'Link zur Arbeit',
+  'Update the offer': 'Angebot ändern',
+  'Offer it as a piece': 'Als Arbeitsprobe anbieten',
+  'Show this work': 'Diese Arbeit zeigen',
+  'Offered. It is not public until they agree.': 'Angeboten. Öffentlich wird es erst, wenn sie zustimmen.',
+  'Put it on your public record, with the payment beside it as proof somebody paid for it. Your client has to agree first.': 'Stell sie auf deine öffentliche Seite, mit der Zahlung daneben als Beleg, dass jemand dafür bezahlt hat. Dein Kunde muss vorher zustimmen.',
+  'Each piece was paid for, and the client agreed to it being shown.': 'Jede Arbeit wurde bezahlt, und der Kunde hat dem Zeigen zugestimmt.',
+  'Offer a different deal': 'Ein anderes Angebot machen',
 };
 
 export default de;
