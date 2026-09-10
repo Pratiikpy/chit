@@ -433,7 +433,11 @@ Honest limits. Everything here needs a physical device or funds.
   PDF itself is built and verified — real bytes, the correct magic header, checked by reading
   the rendered layout back. Handing those bytes to the phone is not: `navigator.share` with
   file support is tried first, opening the PDF in a new tab is the fallback, and which of the
-  two Nimiq Pay's own WebView actually honours has not been seen on a real device.
+  two Nimiq Pay's own WebView actually honours has not been seen on a real device. Three real
+  paths to one were checked, not assumed away: the iOS Simulator (`xcrun`, absent — this
+  machine has no Xcode), an Android emulator (no SDK, no `adb`, nothing under the usual
+  install paths), and a cloud device farm (none configured here). All three are genuine
+  external gaps in this environment, not a reason not to have looked.
 - **The Spanish, French and Portuguese copy has not been read by a native speaker.** It is complete, tested for missing keys, stale keys, dropped placeholders and untranslated leftovers, and written rather than machine-generated — but that is not the same as reviewed.
 - **Arc mainnet.** Every reference found was testnet, which is why the word *escrow* appears
   nowhere in the product.
