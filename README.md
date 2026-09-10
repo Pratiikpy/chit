@@ -231,14 +231,14 @@ Nothing below is a claim about intent; each is a command.
 
 ```bash
 npm install
-npm test          # core 94 · verify 22 · api 93 (+1 needs a blob token) · web 44
+npm test          # core 124 · verify 22 · api 171 (+1 needs a blob token) · web 48
 npm run typecheck # four packages, strict, exactOptionalPropertyTypes
 npm run build
 ```
 
 ```bash
 # Two people, two browsers, two real Ed25519 keys, the whole product end to end.
-# 201 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
+# 252 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
 node --experimental-strip-types scripts/user-journey.mjs
 
 # The live deployment, in a real browser. 21 checks.
@@ -291,7 +291,7 @@ had actually countersigned.
 | `packages/core` | The frozen foundation. Canonical form, digest, delivery form, signature normaliser, terms parser, wallet tiers. No dependency on a browser, a server or a wallet. |
 | `packages/verify` | Real Ed25519 verification and address derivation. Separate because it pulls a WASM bundle that has no business on a phone. |
 | `apps/api` | Chit lifecycle, both storage back-ends, settlement, rate quotes, the bounty, abuse controls. |
-| `apps/web` | Twenty-two screens, no framework. **115 kB of JavaScript, 40 kB gzipped**, with the identicon library and each of the four translations as lazy chunks nobody pays for unless they need them. |
+| `apps/web` | Twenty-two screens, no framework. **136 kB of JavaScript, 45 kB gzipped**, with the identicon library, each of the four translations, and the PDF invoice generator all as lazy chunks nobody pays for unless they need them. |
 
 chit has **no CSS dependency**. It had one — `nimiq-css` — until that package was found to
 publish **no licence at all** (`npm view nimiq-css license` returns nothing; its repository
@@ -429,6 +429,11 @@ Honest limits. Everything here needs a physical device or funds.
   (`nimiq/trust-web3-provider`, branch `nimiq`) and the signer's vectors are pinned, but the
   app binary is closed and the sheet's own UI was not seen.
 - **The Android file picker and camera**, host-gated.
+- **Getting the generated invoice PDF onto the device, inside Nimiq Pay specifically.** The
+  PDF itself is built and verified — real bytes, the correct magic header, checked by reading
+  the rendered layout back. Handing those bytes to the phone is not: `navigator.share` with
+  file support is tried first, opening the PDF in a new tab is the fallback, and which of the
+  two Nimiq Pay's own WebView actually honours has not been seen on a real device.
 - **The Spanish, French and Portuguese copy has not been read by a native speaker.** It is complete, tested for missing keys, stale keys, dropped placeholders and untranslated leftovers, and written rather than machine-generated — but that is not the same as reviewed.
 - **Arc mainnet.** Every reference found was testnet, which is why the word *escrow* appears
   nowhere in the product.
