@@ -126,7 +126,7 @@ export async function buildInvoicePdf(chit: ApiChit, identity: Identity, isWorke
   return doc.output('blob') as Blob;
 }
 
-export type SaveOutcome = { ok: true; via: 'share' | 'navigate' } | { ok: false; error: string };
+export type SaveOutcome = { ok: true; via: 'share' | 'download' } | { ok: false; error: string };
 
 /**
  * `blob.arrayBuffer()` + `btoa`, not `FileReader` — both are standard in every WebView this
@@ -148,22 +148,37 @@ export async function blobToDataUri(blob: Blob): Promise<string> {
 /**
  * Get the generated PDF onto the user's device.
  *
- * `<a download>` is deliberately not used: the same object-store lesson that put the CSV
- * export behind a plain URL applies here too — a script-triggered file download is not
- * reliably honoured inside a WebView. The Web Share API's file support is the one path
- * built for exactly this (a native app handing a generated file to the OS's own share
- * sheet), so it is tried first — and where the host has not bridged it, `navigator.share`
- * is not a function that exists and fails, it is simply `undefined`, so this check falls
- * through immediately rather than wasting a call.
+ * This is the third mechanism this function has used, and the previous two are worth
+ * recording so the reasoning is not silently lost:
  *
- * The fallback is a same-window navigation to a base64 `data:` URI, not `window.open` on a
- * `blob:` URL — the first version of this file used exactly that, and both halves of it are
- * documented WebView failures: `window.open` silently does nothing unless the host app
- * implements new-window creation (`WebChromeClient.onCreateWindow` on Android,
- * `WKUIDelegate.createWebViewWith` on iOS) — the same "needs a host bridge" shape as
- * `window.print()` — and a `blob:` URL cannot be resolved inside Android's WebView at all,
- * since it is scoped to the browser process that created it and an embedded WebView is not
- * that process. Plain navigation and a self-contained `data:` URI need neither.
+ * 1. `window.open()` on a `blob:` URL — the very first version. Broken twice over inside an
+ *    embedded WebView: `window.open` silently does nothing unless the host app implements
+ *    new-window creation (`WebChromeClient.onCreateWindow` on Android, `WKUIDelegate
+ *    .createWebViewWith` on iOS — the same "needs a host bridge" shape as `window.print()`),
+ *    and separately a `blob:` URL cannot be *resolved* inside Android's WebView at all,
+ *    since it is scoped to the process that created it and an embedded WebView is not that
+ *    process.
+ * 2. `window.location.href` to a base64 `data:` URI — the fix for that, and wrong in a new
+ *    way this repository's own end-to-end journey caught: modern Chrome (and every WebView
+ *    built on it, which is every WebView here) blocks a **top-level navigation** to a
+ *    `data:` URI outright, synchronous click handler or not — confirmed directly, not
+ *    inferred, against a real headless Chromium instance. The whole approach navigates
+ *    nowhere and fails silently, the exact failure class this function exists to avoid.
+ *
+ * What actually works, verified against the same Chromium: an `<a download>` whose `href`
+ * is that same `data:` URI, created and clicked entirely in script. This is not a top-level
+ * navigation at all — it is the browser's ordinary file-save path, the same one a real click
+ * on a real download link takes, and a `data:` URI has no blob-style out-of-process
+ * resolution problem to hit either. (This *looks* like the same shape the CSV export
+ * deliberately avoided — "a script-triggered download is not reliably honoured inside a
+ * WebView" — but that lesson was about a `blob:` URL specifically, the one failure mode
+ * this does not share; whether Android's WebView honours `download` for a `data:` URI the
+ * same way desktop Chromium does is the one part of this still unverified on a real device.)
+ *
+ * The Web Share API's file support is still tried first, since a real share sheet is a
+ * better outcome than a silent download when the host has bridged it — and where it has
+ * not, `navigator.share` is not a function that exists and fails, it is simply `undefined`,
+ * confirmed the same way, so this falls through immediately rather than wasting a call.
  */
 export async function saveInvoicePdf(chit: ApiChit, identity: Identity, isWorker: boolean): Promise<SaveOutcome> {
   let blob: Blob;
@@ -184,15 +199,20 @@ export async function saveInvoicePdf(chit: ApiChit, identity: Identity, isWorker
       }
     } catch (error) {
       // A user-cancelled share is not a failure — it looks the same as any other abort from
-      // here, so it falls through to the tab fallback rather than being reported as broken.
+      // here, so it falls through to the download instead of being reported as broken.
       if (error instanceof Error && error.name === 'AbortError') return { ok: true, via: 'share' };
     }
   }
 
   try {
-    window.location.href = await blobToDataUri(blob);
-    return { ok: true, via: 'navigate' };
+    const link = document.createElement('a');
+    link.href = await blobToDataUri(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return { ok: true, via: 'download' };
   } catch {
-    return { ok: false, error: t('Could not open the PDF. Nothing was sent anywhere — try again.') };
+    return { ok: false, error: t('Could not save the PDF. Nothing was sent anywhere — try again.') };
   }
 }

@@ -3043,9 +3043,22 @@ export async function activityScreen(address: string, navigate: Navigate): Promi
    * only way to find an unpaid chit was to scroll the same list as everything else. These
    * are the chits where this wallet is the one waiting: signed by both, not paid, not
    * declined — oldest first, because age is the thing that matters about them.
+   *
+   * Found by a test that exercises this alongside "Ask for changes": a zero-money record
+   * chit — an amend, a cancel, a revision request — has a payer and a payee like any other
+   * chit, `settled` stays false forever because there is nothing to settle, and it was
+   * matching every other test here. Nothing is owed on a chit that never asked for money, so
+   * `isRecordOnly` excludes it explicitly rather than trusting `settled` to imply otherwise.
    */
   const owedToMe = chits
-    .filter((c) => !c.settled && !c.declined && !c.bounty && sameAddress(address, c.chit.kind === 'quote' ? c.chit.payee : c.payTo))
+    .filter(
+      (c) =>
+        !c.settled &&
+        !c.declined &&
+        !c.bounty &&
+        !isRecordOnly({ amountMinor: BigInt(c.chit.amountMinor), luna: BigInt(c.chit.luna) }) &&
+        sameAddress(address, c.chit.kind === 'quote' ? c.chit.payee : c.payTo),
+    )
     .sort((a, b) => a.createdAt - b.createdAt);
 
   const header: HTMLElement[] = [party(address, t('Wallet'), { me })];

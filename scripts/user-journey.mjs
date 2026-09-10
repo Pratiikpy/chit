@@ -24,7 +24,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { KeyPair } from '@nimiq/core';
 import { nimiqSignedMessageDigest, verifySignedText } from '@chit/verify';
@@ -752,6 +752,28 @@ try {
   await shot(worker.page, '38-invoice-print');
   await worker.page.emulateMedia({ media: 'screen' });
 
+  /*
+   * Download PDF — never clicked through before this. window.print() is not tested here on
+   * purpose (it does not work inside an embedded WebView, which is the entire reason this
+   * button exists). Headless Chromium has no navigator.share bridged (confirmed: undefined,
+   * not a function that fails), so this exercises the real fallback: a script-clicked
+   * <a download> against a data: URI. Two earlier fallbacks were tried and both failed real
+   * Chromium — window.open() on a blob: URL, and a plain navigation to the data: URI itself,
+   * which Chrome blocks as a top-level navigation regardless of timing — so this specifically
+   * asserts a real download *event* fires, not merely that nothing threw.
+   */
+  const downloadPromise = worker.page.waitForEvent('download', { timeout: 20_000 }).catch((e) => ({ failed: String(e) }));
+  await worker.page.locator('button', { hasText: 'Download PDF' }).click();
+  const download = await downloadPromise;
+  check('⭐ Download PDF triggers a real browser download, not a blocked navigation or a silent no-op', !('failed' in download), 'failed' in download ? download.failed : download.suggestedFilename());
+  if (!('failed' in download)) {
+    const savedPath = await download.path();
+    const pdfBytes = savedPath ? readFileSync(savedPath) : Buffer.alloc(0);
+    check('and the downloaded file is a real PDF, not a placeholder', pdfBytes.subarray(0, 5).toString() === '%PDF-');
+    check('named after the chit, so a folder of them stays sortable', /^chit-invoice-/.test(download.suggestedFilename()));
+  }
+  check('and the page itself never navigated away', worker.page.url().startsWith(WEB));
+
   /* -------------------------------------------------- "here it is" */
   console.log('\n8h. The worker says it is delivered, and the payer sees it before paying');
   const hPayerKey = KeyPair.generate();
@@ -796,6 +818,25 @@ try {
   const payerSees = await hPayer.page.locator('body').innerText();
   check('the payer sees it was delivered before they decide', /they marked it delivered/i.test(payerSees));
 
+  /*
+   * "Not quite right?" — the payer asks for changes before deciding whether to pay. Never
+   * exercised end to end before this: the panel itself only had a unit-level formula test.
+   */
+  await hPayer.page.locator('summary', { hasText: 'Not quite right?' }).click();
+  await hPayer.page.locator('input[aria-label="What needs to change"]').fill('Can you make the logo bigger in the final ten seconds?');
+  await hPayer.page.locator('button', { hasText: 'Ask for changes' }).click();
+  await hPayer.page.waitForSelector('text=Sent — it is signed and on the record', { timeout: 20_000 });
+  await shot(hPayer.page, '36b-revision-requested');
+  const revisionChildren = await (await fetch(`${API}/api/chits/${encodeURIComponent(deliverId)}/children`)).json();
+  check(
+    '⭐ asking for changes creates a real, signed child chit — not just a UI message',
+    revisionChildren.children?.length === 1 && /Revision requested — Can you make the logo bigger/.test(revisionChildren.children[0]?.chit?.text ?? ''),
+  );
+  await hPayer.page.reload({ waitUntil: 'networkidle' });
+  await hPayer.page.locator('summary', { hasText: 'Not quite right?' }).click();
+  await hPayer.page.waitForSelector('text=1 revision requested so far', { timeout: 20_000 });
+  check('and the count is visible on a fresh load, not just in the moment it happened', true);
+
   // Who owes you, and the one tap that chases them. There are no reminders on this platform,
   // so the person owed is the only thing that can chase a client.
   await hWorker.page.goto(`${WEB}/a/${encodeURIComponent(hWorker.address)}`, { waitUntil: 'networkidle' });
@@ -803,7 +844,10 @@ try {
   await shot(hWorker.page, '37-waiting-to-be-paid');
   const owedBody = await hWorker.page.locator('body').innerText();
   check('an unpaid chit is listed apart, with its age', /Waiting to be paid/.test(owedBody) && /teaser from the raw footage/.test(owedBody));
-  check('and can be chased in one tap', await hWorker.page.locator('.owed__nudge').count() === 1);
+  // Exactly one: the real $25 owed, and only that — a zero-money revision request against
+  // the same chit and the same two wallets used to count as a second one, until owedToMe
+  // learned to exclude record-only chits (see its own comment for how that was found).
+  check('and can be chased in one tap', (await hWorker.page.locator('.owed__nudge').count()) === 1);
   check('with the link to the work', /Open the delivery/.test(payerSees));
   check('and is told plainly that it obliges nobody', /nothing has been paid because of it/i.test(payerSees));
 

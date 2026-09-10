@@ -588,7 +588,7 @@ const de: Dict = {
   'Download PDF': 'PDF herunterladen',
   'Preparing the PDF…': 'PDF wird vorbereitet …',
   'Could not build the PDF. Nothing was sent anywhere — try again.': 'Das PDF konnte nicht erstellt werden. Es wurde nichts gesendet — versuch es noch einmal.',
-  'Could not open the PDF. Nothing was sent anywhere — try again.': 'Das PDF konnte nicht geöffnet werden. Es wurde nichts gesendet — versuch es noch einmal.',
+  'Could not save the PDF. Nothing was sent anywhere — try again.': 'Das PDF konnte nicht gespeichert werden. Es wurde nichts gesendet — versuch es noch einmal.',
   'Settled in NIM on the Nimiq blockchain. Anyone can verify this transaction against the reference above, with no account.': 'Abgewickelt in NIM auf der Nimiq-Blockchain. Jeder kann diese Transaktion anhand der obigen Referenz prüfen, ohne Konto.',
   'Settled in NIM on the Nimiq blockchain. This document was generated on your device; chit never saw the details above the line.': 'Abgewickelt in NIM auf der Nimiq-Blockchain. Dieses Dokument wurde auf deinem Gerät erstellt; chit hat die Angaben über dieser Zeile nie gesehen.',
 
