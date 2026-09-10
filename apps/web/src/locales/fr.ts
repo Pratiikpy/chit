@@ -610,6 +610,19 @@ const fr: Dict = {
   'Part of a series': 'Fait partie d\'une série',
   'See what this answers': 'Voir à quoi cela répond',
   'What came after': 'Ce qui est venu après',
+
+  /* ---- ask for changes, before deciding whether to pay ---- */
+  'Not quite right?': 'Pas tout à fait ça ?',
+  'What needs to change': 'Ce qui doit changer',
+  'e.g. can you make the logo bigger?': 'par ex. peux-tu agrandir le logo ?',
+  'Ask for changes': 'Demander des changements',
+  'Sent — it is signed and on the record, and they will see it.': 'Envoyé — c\'est signé et au registre, et ils le verront.',
+  'Revision requested — {line}': 'Révision demandée — {line}',
+  '{n} revision requested so far': '{n} révision demandée jusqu\'ici',
+  '{n} revisions requested so far': '{n} révisions demandées jusqu\'ici',
+  'That is a real amount of extra work. A paid round is a fair way to ask for one.': 'C\'est une vraie charge de travail supplémentaire. Une série payante est une façon juste de la demander.',
+  'Propose a paid revision': 'Proposer une révision payante',
+  'Additional revision beyond what was agreed': 'Révision supplémentaire au-delà de ce qui était convenu',
 };
 
 export default fr;

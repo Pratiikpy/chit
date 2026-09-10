@@ -1878,7 +1878,7 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
         deal(chit.chit.text),
         demoNote,
         pastDeadline(chit, false),
-        deliveredBlock(chit, false),
+        deliveredBlock(chit, false, navigate),
         el('div', {
           class: 'card',
           children: [
@@ -1909,7 +1909,7 @@ function payScreen(chit: ApiChit, detection: WalletDetection, navigate: Navigate
  * decides, and the copy says so on both sides. The link is stored as a string and the file
  * never touches chit — storage is a different product with a different liability.
  */
-function deliveredBlock(chit: ApiChit, viewerIsWorker: boolean): HTMLElement | null {
+function deliveredBlock(chit: ApiChit, viewerIsWorker: boolean, navigate: Navigate): HTMLElement | null {
   const delivered = chit.delivery;
   if (!delivered) return null;
   const children: Array<Node | null> = [
@@ -1927,7 +1927,105 @@ function deliveredBlock(chit: ApiChit, viewerIsWorker: boolean): HTMLElement | n
       el('p', { class: 'small muted', text: displayLink(delivered.link) }),
     );
   }
+  // Only the party deciding whether to pay is offered a way to ask for changes — the worker's
+  // own view of their own delivery has nothing to react to here.
+  if (!viewerIsWorker && !chit.settled) children.push(revisionPanel(chit, navigate));
   return el('div', { class: 'card card--pad stack stack--tight', children: children.filter((c): c is Node => c !== null) });
+}
+
+/**
+ * The record's own text is generated in whichever of the five languages the composer was
+ * using, same as `isCancel` above — so recognising "this one is a revision request" has to
+ * match all five from the start, not repeat that bug.
+ */
+const REVISION_PATTERN = /^(Revision requested|Überarbeitung erbeten|Revisión solicitada|Révision demandée|Revisão pedida)/i;
+
+/** Requests before the screen starts suggesting a paid round instead of another free one. */
+const REVISIONS_BEFORE_SUGGESTING_A_PAID_ROUND = 3;
+
+/**
+ * "Ask for changes" — the payer's reaction to a delivery, before deciding whether to pay.
+ *
+ * chit cannot block a sixth free round: there is no account to suspend and nothing held to
+ * withhold, so a limit here can only ever be a plain count and an honest suggestion, never
+ * an enforced ceiling. Built the same way "Something changed?" is — a zero-money chit,
+ * signed, pointing at this one — so a revision request is real, timestamped evidence rather
+ * than a message that could later be denied.
+ */
+function revisionPanel(chit: ApiChit, navigate: Navigate): HTMLElement {
+  const box = el('div', { class: 'stack stack--tight' });
+  const messages = el('div', { class: 'stack stack--tight' });
+  const noteInput = el('input', {
+    class: 'field',
+    attrs: { type: 'text', maxlength: 160, autocomplete: 'off', 'aria-label': t('What needs to change'), placeholder: t('e.g. can you make the logo bigger?') },
+  });
+  const send = button(t('Ask for changes'), () => void go(), 'quiet', 'pen');
+  send.disabled = true;
+  noteInput.addEventListener('input', () => (send.disabled = noteInput.value.trim().length < 3));
+
+  const status = el('div', { class: 'stack stack--tight' });
+  box.append(details(t('Not quite right?'), [noteInput, send, status, messages], { cls: 'help' }));
+
+  async function go(): Promise<void> {
+    const worker = chit.chit.payee || chit.payTo;
+    if (!worker) return;
+    await withBusy(send, t('Waiting for your wallet…'), async () => {
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const draft = buildRecordChit({
+          text: t('Revision requested — {line}', { line: noteInput.value.trim() }),
+          signer: session.address,
+          other: worker,
+          chain: chit.chit.chain,
+          currency: chit.chit.currency,
+          currentBlock: chit.currentBlock && chit.currentBlock > 0 ? chit.currentBlock : chit.chit.rateBlock,
+        });
+        const signature = await session.wallet.signText(draft.canonical);
+        const created = await api.createChit(draft.canonical, signature, chit.id);
+        if (!created.ok) {
+          messages.append(note(created.error, 'bad'));
+          return;
+        }
+        noteInput.value = '';
+        send.disabled = true;
+        await paintCount();
+        messages.append(note(t('Sent — it is signed and on the record, and they will see it.'), 'good'));
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
+      }
+    });
+  }
+
+  async function paintCount(): Promise<void> {
+    const result = await api.children(chit.id);
+    if (!result.ok) return;
+    const asked = result.value.children.filter((c) => REVISION_PATTERN.test(c.chit.text));
+    status.replaceChildren();
+    if (asked.length === 0) return;
+    status.append(el('p', { class: 'small secondary', text: count(asked.length, '{n} revision requested so far', '{n} revisions requested so far') }));
+    if (asked.length >= REVISIONS_BEFORE_SUGGESTING_A_PAID_ROUND) {
+      status.append(
+        el('div', {
+          class: 'card',
+          children: [
+            el('p', { class: 'small secondary', text: t('That is a real amount of extra work. A paid round is a fair way to ask for one.') }),
+            button(
+              t('Propose a paid revision'),
+              () => navigate(`/?dir=earning&parent=${encodeURIComponent(chit.id)}&text=${encodeURIComponent(t('Additional revision beyond what was agreed'))}`),
+              'quiet',
+              'pen',
+            ),
+          ],
+        }),
+      );
+    }
+  }
+
+  void paintCount();
+  return box;
 }
 
 /**
@@ -2007,7 +2105,7 @@ function awaitingPaymentScreen(chit: ApiChit, navigate: Navigate, isWorker: bool
         deal(chit.chit.text),
         state,
         pastDeadline(chit, isWorker),
-        deliveredBlock(chit, isWorker),
+        deliveredBlock(chit, isWorker, navigate),
         el('div', { class: 'card', children: [party(chit.chit.payer, t('From'), { me, nameable: isWorker }), dueRow(chit), factRows(chit)] }),
         isWorker && !chit.delivery ? deliverPanel(chit, navigate) : null,
         // Last, and folded. It is the thing you reach for when something has gone sideways,
@@ -3147,7 +3245,11 @@ function recordBody(chit: ApiChit, me: string | null, navigate: Navigate): Array
  */
 function recordScreen(chit: ApiChit, navigate: Navigate, isMine: boolean, detection: WalletDetection): void {
   const me = rememberedAddress();
-  const isCancel = /^(Called off by agreement|Einvernehmlich abgesagt)/i.test(chit.chit.text);
+  // The record's own text is a signed sentence, generated in whichever of the five languages
+  // the composer was using at the time — so recognising "this one is a cancel" has to match
+  // all five, not just the two it shipped with. Missing three of them was a real bug: a
+  // Spanish, French or Portuguese cancel silently fell through to the generic "change" copy.
+  const isCancel = /^(Called off by agreement|Einvernehmlich abgesagt|Cancelado de mutuo acuerdo|Annulé d.un commun accord|Cancelado de comum acordo)/i.test(chit.chit.text);
   const messages = el('div', { class: 'stack stack--tight' });
 
   const parentId = chit.parent ?? null;
