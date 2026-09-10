@@ -63,6 +63,17 @@ And the honest inverse, said on the first screen: **proof of payment, not protec
 chit cannot escrow, cannot reverse a payment, and cannot arbitrate. Anyone who tells a
 freelancer otherwise on this rail is selling something.
 
+### The other place to draw this line
+
+A signed agreement with the payment as its own proof is not, by itself, a hard thing to
+build — more than one app this cycle does it, some with real polish. The fork in the road
+is what happens to the agreement afterward. The private choice keeps it between the two
+parties and shows it to nobody else by default. chit makes the opposite bet, because the
+two problems this audience actually has — *nobody can find me* and *nobody can check my
+history* — are not solved by a better contract. They are solved by a record a stranger can
+see without asking either party first. The board, the public Q&A, the two-signature
+showcase and the address-keyed record below are one decision, not four features.
+
 ---
 
 ## How it works
