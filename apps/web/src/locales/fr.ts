@@ -627,7 +627,6 @@ const fr: Dict = {
   'Download PDF': 'Télécharger le PDF',
   'Preparing the PDF…': 'Préparation du PDF…',
   'Could not build the PDF. Nothing was sent anywhere — try again.': 'Impossible de créer le PDF. Rien n\'a été envoyé — réessaie.',
-  'Your browser blocked the new tab. Allow pop-ups for this page and try again.': 'Ton navigateur a bloqué le nouvel onglet. Autorise les fenêtres pop-up sur cette page et réessaie.',
   'Could not open the PDF. Nothing was sent anywhere — try again.': 'Impossible d\'ouvrir le PDF. Rien n\'a été envoyé — réessaie.',
   'Settled in NIM on the Nimiq blockchain. Anyone can verify this transaction against the reference above, with no account.': 'Réglé en NIM sur la blockchain Nimiq. Tout le monde peut vérifier cette transaction avec la référence ci-dessus, sans compte.',
   'Settled in NIM on the Nimiq blockchain. This document was generated on your device; chit never saw the details above the line.': 'Réglé en NIM sur la blockchain Nimiq. Ce document a été généré sur ton appareil ; chit n\'a jamais vu les informations ci-dessus.',

@@ -431,13 +431,25 @@ Honest limits. Everything here needs a physical device or funds.
 - **The Android file picker and camera**, host-gated.
 - **Getting the generated invoice PDF onto the device, inside Nimiq Pay specifically.** The
   PDF itself is built and verified — real bytes, the correct magic header, checked by reading
-  the rendered layout back. Handing those bytes to the phone is not: `navigator.share` with
-  file support is tried first, opening the PDF in a new tab is the fallback, and which of the
-  two Nimiq Pay's own WebView actually honours has not been seen on a real device. Three real
-  paths to one were checked, not assumed away: the iOS Simulator (`xcrun`, absent — this
-  machine has no Xcode), an Android emulator (no SDK, no `adb`, nothing under the usual
-  install paths), and a cloud device farm (none configured here). All three are genuine
-  external gaps in this environment, not a reason not to have looked.
+  the rendered layout back. Handing those bytes to the phone is the part still unverified on
+  a real device — but two real WebView defects in the *first* version of that path were found
+  by research and corrected before either shipped further: `window.open()` on a `blob:` URL,
+  the original fallback, fails twice over inside Android's WebView — new-window creation is
+  silently ignored unless the host app implements `onCreateWindow`, the same "needs a host
+  bridge" shape `window.print()` already has, and separately a `blob:` URL cannot be resolved
+  inside the WebView at all, since it is scoped to the process that created it and an embedded
+  WebView is not that process (`developer.android.com/develop/ui/views/layout/webapps/webview`;
+  matching reports at `techblogs.42gears.com` and the `react-native-webview` issue tracker).
+  The fallback is now a same-window navigation to a self-contained base64 `data:` URI, which
+  needs neither a host bridge nor blob resolution. `navigator.share` itself is tried first and
+  is genuinely harmless to attempt: where the host has not bridged it, it is `undefined`
+  rather than a function that exists and fails, confirmed against the same issue tracker, so
+  chit's existing `typeof nav.share === 'function'` guard already falls through correctly with
+  no wasted call. What remains unseen on a real phone is only the corrected `data:` URI path
+  itself. Three real paths to a device were checked before settling for research instead: the
+  iOS Simulator (`xcrun`, absent — this machine has no Xcode), an Android emulator (no SDK, no
+  `adb`, nothing under the usual install paths), and a cloud device farm (none configured
+  here).
 - **The Spanish, French and Portuguese copy has not been read by a native speaker.** It is complete, tested for missing keys, stale keys, dropped placeholders and untranslated leftovers, and written rather than machine-generated — but that is not the same as reviewed.
 - **Arc mainnet.** Every reference found was testnet, which is why the word *escrow* appears
   nowhere in the product.

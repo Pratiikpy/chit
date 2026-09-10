@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ApiChit } from '../src/api.ts';
 import type { Identity } from '../src/identity.ts';
-import { buildInvoicePdf } from '../src/invoice-pdf.ts';
+import { buildInvoicePdf, blobToDataUri } from '../src/invoice-pdf.ts';
 
 const EMPTY_IDENTITY: Identity = { name: '', address: '', taxId: '', contact: '', taxNote: '' };
 
@@ -89,4 +89,19 @@ test('does not throw on a very long deal line, a quote, or a chit with no settle
 
   const noTx = settledChit({ settledTx: null, settled: false });
   await assert.doesNotReject(buildInvoicePdf(noTx, EMPTY_IDENTITY, false));
+});
+
+test('⭐ the WebView-safe delivery path: a data: URI that decodes back to the exact same PDF bytes', async () => {
+  // Not window.open() on a blob: URL — that fails twice over inside Android's WebView (new
+  // windows need a host bridge; blob: URLs cannot be resolved there at all). This is the
+  // fix: a same-window navigation to a self-contained base64 data: URI. Proving the encoding
+  // round-trips exactly is what makes that fix real rather than merely plausible.
+  const original = await buildInvoicePdf(settledChit(), EMPTY_IDENTITY, true);
+  const uri = await blobToDataUri(original);
+  assert.match(uri, /^data:application\/pdf;base64,/, 'a same-window navigation needs no host to resolve this, unlike blob:');
+  const base64 = uri.slice(uri.indexOf(',') + 1);
+  const decoded = Buffer.from(base64, 'base64');
+  const originalBytes = Buffer.from(await original.arrayBuffer());
+  assert.ok(decoded.equals(originalBytes), 'decoding the data: URI must reproduce the exact PDF bytes, not a truncated or re-encoded copy');
+  assert.equal(decoded.subarray(0, 5).toString(), '%PDF-');
 });

@@ -126,7 +126,24 @@ export async function buildInvoicePdf(chit: ApiChit, identity: Identity, isWorke
   return doc.output('blob') as Blob;
 }
 
-export type SaveOutcome = { ok: true; via: 'share' | 'tab' } | { ok: false; error: string };
+export type SaveOutcome = { ok: true; via: 'share' | 'navigate' } | { ok: false; error: string };
+
+/**
+ * `blob.arrayBuffer()` + `btoa`, not `FileReader` — both are standard in every WebView this
+ * needs to run in, but `FileReader` is not a Node global, which is what caught this: the
+ * test proving this function's own output decodes correctly could not run against it.
+ * Built a byte at a time rather than `String.fromCharCode(...bytes)`, since spreading a
+ * large typed array into function arguments has its own stack limit; a PDF this size will
+ * never approach it, but the loop costs nothing and never needs revisiting if one someday did.
+ *
+ * Exported only so a test can prove the encoding round-trips; not used outside this module.
+ */
+export async function blobToDataUri(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
+}
 
 /**
  * Get the generated PDF onto the user's device.
@@ -135,8 +152,18 @@ export type SaveOutcome = { ok: true; via: 'share' | 'tab' } | { ok: false; erro
  * export behind a plain URL applies here too — a script-triggered file download is not
  * reliably honoured inside a WebView. The Web Share API's file support is the one path
  * built for exactly this (a native app handing a generated file to the OS's own share
- * sheet), so it is tried first; opening the PDF in a new tab is the fallback for a browser
- * that has no share sheet at all, where a plain navigation still works.
+ * sheet), so it is tried first — and where the host has not bridged it, `navigator.share`
+ * is not a function that exists and fails, it is simply `undefined`, so this check falls
+ * through immediately rather than wasting a call.
+ *
+ * The fallback is a same-window navigation to a base64 `data:` URI, not `window.open` on a
+ * `blob:` URL — the first version of this file used exactly that, and both halves of it are
+ * documented WebView failures: `window.open` silently does nothing unless the host app
+ * implements new-window creation (`WebChromeClient.onCreateWindow` on Android,
+ * `WKUIDelegate.createWebViewWith` on iOS) — the same "needs a host bridge" shape as
+ * `window.print()` — and a `blob:` URL cannot be resolved inside Android's WebView at all,
+ * since it is scoped to the browser process that created it and an embedded WebView is not
+ * that process. Plain navigation and a self-contained `data:` URI need neither.
  */
 export async function saveInvoicePdf(chit: ApiChit, identity: Identity, isWorker: boolean): Promise<SaveOutcome> {
   let blob: Blob;
@@ -163,11 +190,8 @@ export async function saveInvoicePdf(chit: ApiChit, identity: Identity, isWorker
   }
 
   try {
-    const url = URL.createObjectURL(blob);
-    const opened = window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    if (!opened) return { ok: false, error: t('Your browser blocked the new tab. Allow pop-ups for this page and try again.') };
-    return { ok: true, via: 'tab' };
+    window.location.href = await blobToDataUri(blob);
+    return { ok: true, via: 'navigate' };
   } catch {
     return { ok: false, error: t('Could not open the PDF. Nothing was sent anywhere — try again.') };
   }
