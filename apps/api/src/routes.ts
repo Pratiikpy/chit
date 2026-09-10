@@ -22,7 +22,7 @@ import { RateUnavailableError, type RateService } from './rates.ts';
 import type { ChainClient } from './chain.ts';
 import { bodyLimit, rateLimit, securityHeaders } from './guard.ts';
 import { BOARD_KINDS, BOARD_SORTS, board, type BoardKind, type BoardSort } from './board.ts';
-import { ledger, presentLedger, presentProfile, profile } from './reputation.ts';
+import { ledger, presentLedger, presentProfile, profile, sameAddress } from './reputation.ts';
 import { toCsv } from './export.ts';
 import type { BountyService, DemoWorker } from './bounty.ts';
 
@@ -279,6 +279,34 @@ export function createRoutes(options: RouteOptions) {
     if (typeof rawParent === 'string' && rawParent.length > 0) {
       const found = await store.get(rawParent);
       if (!found) return c.json({ code: 'no-parent', error: 'The chit this one answers does not exist.' }, 400);
+      /*
+       * Found by attacking this route directly: nothing above checked that whoever is signing
+       * *this* chit was a party to the one it claims to answer — a complete stranger's chit
+       * was accepted as a "child" of someone else's real, unrelated, already-settled deal, and
+       * it showed up in both its series list and its revision count.
+       *
+       * The rule cannot simply be "must be payer or payee": an *open* race or quote has no
+       * second party yet by design — countering one, or a stranger offering to take one on
+       * before countersigning, is exactly how the second party gets established, and the
+       * board depends on that staying open to anyone. So this only restricts a parent that has
+       * *already* paired off: a race once countersigned (payer + countersigner), a quote once
+       * settled (payee + whoever it settled from), a handshake always (both sign upfront, so
+       * it is never "open" in this sense). `null` below means "still open — anyone may answer
+       * it", which is the same door the counter-offer and quote-countering features already
+       * use; only a chit with a real second party gets checked against it.
+       */
+      const signer = parsed.kind === 'quote' ? parsed.payee : parsed.payer;
+      const established: Array<string | null | undefined> | null =
+        found.chit.kind === 'handshake'
+          ? [found.chit.payer, found.chit.payee]
+          : found.chit.kind === 'quote'
+            ? (found.settledFrom ? [found.chit.payee, found.settledFrom] : null)
+            : found.countersigner
+              ? [found.chit.payer, found.countersigner]
+              : null;
+      if (established && !established.some((party) => sameAddress(party ?? undefined, signer))) {
+        return c.json({ code: 'not-a-party', error: 'You are not one of the two parties to the chit this one answers.' }, 403);
+      }
       parent = found.id;
     }
 

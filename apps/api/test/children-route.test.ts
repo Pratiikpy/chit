@@ -143,3 +143,72 @@ test('naming a parent that does not exist is refused, not silently dropped', asy
   assert.equal(created.status, 400);
   assert.equal(created.body['code'], 'no-parent');
 });
+
+test('⭐ a stranger cannot attach a chit to someone else\'s already-paired-off deal', async () => {
+  // Found by attacking this route directly, not by inspection: before this test existed, the
+  // check above only asked "does this parent exist", never "is the new chit's signer one of
+  // its two parties" — so anyone could make their own chit show up as a "child" of a deal they
+  // had nothing to do with, inflating another wallet's series list and revision count for free.
+  // Countersigned first: an *open* race is fair game for anyone to answer (see the next test)
+  // — the restriction only makes sense once the deal has a real second party to protect.
+  const h = harness();
+  const alice = KeyPair.generate();
+  const bob = KeyPair.generate();
+  const realChit = openChit(alice.toAddress().toUserFriendlyAddress(), { text: '$500 to build a landing page' });
+  const realCanonical = canonicalise(realChit);
+  const real = await h.post('/api/chits', { canonical: realCanonical, payerSignature: signAsWallet(alice, realCanonical) });
+  const realId = String(real.body['id']);
+  await h.post(`/api/chits/${encodeURIComponent(realId)}/countersign`, { signature: signAsWallet(bob, realCanonical) });
+
+  const mallory = KeyPair.generate();
+  const spamChit = openChit(mallory.toAddress().toUserFriendlyAddress(), { text: 'Revision requested — you are terrible at your job' });
+  const spamCanonical = canonicalise(spamChit);
+  const spam = await h.post('/api/chits', { canonical: spamCanonical, payerSignature: signAsWallet(mallory, spamCanonical), parent: realId });
+  assert.equal(spam.status, 403, 'a stranger to the paired-off deal must be refused, not accepted');
+  assert.equal(spam.body['code'], 'not-a-party');
+
+  const children = await h.call(`/api/chits/${encodeURIComponent(realId)}/children`);
+  assert.deepEqual(children.body['children'], [], 'the refused spam must not appear on the real chit\'s record');
+});
+
+test('an open, unclaimed quote may still be countered by a first-time buyer — that is how its second party gets established', async () => {
+  // "Offer a different deal" — the buyer's mirror of a worker's counter-offer — points a new
+  // *race* (the buyer proposing, the seller to countersign) back at the open quote it answers.
+  // The quote has no established payer yet (payer: '' until someone pays it), so the buyer
+  // making that first offer cannot already be one of its "parties" — the restriction must not
+  // block the one mechanism that lets a quote gain a second party at all.
+  const h = harness();
+  const seller = KeyPair.generate();
+  const quote = openChit(seller.toAddress().toUserFriendlyAddress(), { kind: 'quote', payer: '', payee: seller.toAddress().toUserFriendlyAddress(), text: '$40 for a 60-second logo animation' });
+  const quoteCanonical = canonicalise(quote);
+  const created = await h.post('/api/chits', { canonical: quoteCanonical, payerSignature: signAsWallet(seller, quoteCanonical) });
+  assert.equal(created.status, 201);
+  const quoteId = String(created.body['id']);
+
+  const buyer = KeyPair.generate();
+  const counterChit = openChit(buyer.toAddress().toUserFriendlyAddress(), { payee: seller.toAddress().toUserFriendlyAddress(), text: '$30 for the same, shorter deadline' });
+  const counterCanonical = canonicalise(counterChit);
+  const counter = await h.post('/api/chits', { canonical: counterCanonical, payerSignature: signAsWallet(buyer, counterCanonical), parent: quoteId });
+  assert.equal(counter.status, 201, 'a first-time buyer countering an open quote must still work');
+});
+
+test('any of the four addresses a chit can answer through counts as being a party to it', async () => {
+  // The chit being answered can be in any of its four states by the time somebody answers it —
+  // just posted (only payer known), countersigned (payer + countersigner), or a settled quote
+  // (payee known from the start, payer only known from settlement). Each has to work.
+  const h = harness();
+  const payer = KeyPair.generate();
+  const worker = KeyPair.generate();
+
+  const openRace = openChit(payer.toAddress().toUserFriendlyAddress());
+  const openCanonical = canonicalise(openRace);
+  const created = await h.post('/api/chits', { canonical: openCanonical, payerSignature: signAsWallet(payer, openCanonical) });
+  const raceId = String(created.body['id']);
+  await h.post(`/api/chits/${encodeURIComponent(raceId)}/countersign`, { signature: signAsWallet(worker, openCanonical) });
+
+  // The countersigner (the worker) answers their own countersigned race.
+  const workerReplyChit = openChit(worker.toAddress().toUserFriendlyAddress(), { text: 'Can we push the deadline a day?' });
+  const workerReplyCanonical = canonicalise(workerReplyChit);
+  const workerReply = await h.post('/api/chits', { canonical: workerReplyCanonical, payerSignature: signAsWallet(worker, workerReplyCanonical), parent: raceId });
+  assert.equal(workerReply.status, 201, 'the countersigner is a real party once countersigned');
+});
