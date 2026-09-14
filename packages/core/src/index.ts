@@ -32,6 +32,20 @@ export {
 } from './delivery.ts';
 
 export {
+  DECLINE_CANONICAL_VERSION,
+  canonicaliseDecline,
+  parseDecline,
+  type Decline,
+} from './decline.ts';
+
+export {
+  DEMO_REQUEST_CANONICAL_VERSION,
+  canonicaliseDemoRequest,
+  parseDemoRequest,
+  type DemoRequest,
+} from './demo-request.ts';
+
+export {
   ANSWER_CANONICAL_VERSION,
   MAX_ANSWER_BYTES,
   MAX_QUESTION_BYTES,

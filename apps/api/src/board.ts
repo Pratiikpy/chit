@@ -148,16 +148,19 @@ const MAX_LIMIT = 100;
 /**
  * Is this chit still open for somebody to take?
  *
- * Four ways a chit leaves the board, and each is a fact rather than a judgement: it was
- * countersigned, it settled, it was declined, or its deadline passed. `currentBlock` decides the
- * last one because the deadline is a block height — the chain's clock, not ours, which is what makes
- * "this expired" checkable by the person it was refused for.
+ * Three ways a chit leaves the board, and each is a fact rather than a judgement: it was
+ * countersigned, it settled, or its deadline passed. `currentBlock` decides the last one because
+ * the deadline is a block height — the chain's clock, not ours, which is what makes "this
+ * expired" checkable by the person it was refused for.
+ *
+ * A decline is deliberately not a fourth way. An open race names nobody, so `declinedAt` on one
+ * records that *somebody* passed, not that everybody should stop seeing it — the same reason
+ * anyone may countersign one, not only whoever the payer had in mind when they shared the link.
  */
 export function isOpen(chit: StoredChit, currentBlock: number): boolean {
   if (chit.chit.kind !== 'race' && chit.chit.kind !== 'quote') return false;
   if (chit.countersignedAt) return false;
   if (chit.settledAt) return false;
-  if (chit.declinedAt) return false;
   return chit.chit.deadlineBlock > currentBlock;
 }
 

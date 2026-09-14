@@ -104,6 +104,40 @@ async function finishedJob(
   return { id, canonical };
 }
 
+/**
+ * A quote settled by a client — the payer field is empty by construction on this kind (see
+ * routes.ts's own comment on the review route: "the client is whoever sent the settling
+ * transaction and nothing else"). Showcase/agree has to resolve that the same way review does.
+ */
+async function finishedQuote(
+  store: SqliteRepository,
+  post: (path: string, payload: unknown) => Promise<{ status: number; body: Record<string, unknown> }>,
+  worker: KeyPair,
+  client: KeyPair,
+) {
+  const chit: Chit = {
+    chain: 'test',
+    kind: 'quote',
+    nonce: newNonce(),
+    text: '$40 for a logo animation',
+    amountMinor: 4000n,
+    currency: 'USD',
+    luna: 100_000_000n,
+    rateBlock: HEIGHT - 100,
+    deadlineBlock: HEIGHT + 100_000,
+    payer: '',
+    payee: worker.toAddress().toUserFriendlyAddress(),
+    deliverables: 1,
+  };
+  const canonical = canonicalise(chit);
+  const created = await post('/api/chits', { canonical, payerSignature: sign(worker, canonical) });
+  assert.ok(created.status === 201 || created.status === 200, JSON.stringify(created.body));
+  const id = created.body['id'] as string;
+
+  await store.markSettled(id, { hash: TX, blockNumber: HEIGHT + 1, from: client.toAddress().toUserFriendlyAddress() });
+  return { id, canonical };
+}
+
 const offer = (
   post: (path: string, payload: unknown) => Promise<{ status: number; body: Record<string, unknown> }>,
   id: string,
@@ -181,6 +215,25 @@ test('⭐ only the person who paid may agree to it being shown', async () => {
     assert.equal(agreed.status, 403, 'nobody but the payer agrees');
   }
   assert.equal((await store.showcase(id))?.agreed, undefined);
+});
+
+test('⭐ on a settled quote, agreement is bound to who actually paid — not to the empty payer field', async () => {
+  const { store, post } = harness();
+  const worker = KeyPair.generate();
+  const client = KeyPair.generate();
+  const { id } = await finishedQuote(store, post, worker, client);
+  await offer(post, id, worker);
+  const piece = await store.showcase(id);
+
+  // A stranger — not the client, not the worker — must not be able to rubber-stamp this.
+  const stranger = await post(`/api/chits/${id}/showcase/agree`, { signature: sign(KeyPair.generate(), piece!.canonical) });
+  assert.equal(stranger.status, 403, 'a quote has no payer field to (wrongly) skip the check against');
+  assert.equal((await store.showcase(id))?.agreed, undefined);
+
+  // The wallet that actually sent the settling transaction can.
+  const agreed = await post(`/api/chits/${id}/showcase/agree`, { signature: sign(client, piece!.canonical) });
+  assert.equal(agreed.status, 200, JSON.stringify(agreed.body));
+  assert.ok(pieceOf(agreed.body)?.agreed);
 });
 
 test('⭐ nothing is on the public record until both have signed', async () => {

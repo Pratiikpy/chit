@@ -20,7 +20,7 @@
  *   and their own locale's notation, with the NIM figure beside it rather than hidden.
  */
 
-import { canonicaliseAnswer, canonicaliseDelivery, canonicaliseQuestion, canonicaliseReview, canonicaliseShowcase, chitHash, fromBase64Url, isRecordOnly, newNonce, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
+import { canonicaliseAnswer, canonicaliseDecline, canonicaliseDelivery, canonicaliseDemoRequest, canonicaliseQuestion, canonicaliseReview, canonicaliseShowcase, chitHash, fromBase64Url, isRecordOnly, newNonce, parseCanonical, parseTerms, toBase64Url } from '@chit/core';
 import QrCreator from 'qr-creator';
 import { api, type ApiChit, type ApiQuestion, type ApiReview, type ApiShowcase, type BoardQuery, type LedgerView, type ProfileView } from './api.ts';
 import { buildDraft, buildRecordChit, BLOCKS_PER_DAY, fieldsFromTerms, isReady, quoteExpired, type DraftFields, type Quote } from './compose.ts';
@@ -946,7 +946,12 @@ export async function chitScreen(id: string, navigate: Navigate): Promise<void> 
     return recordScreen(chit, navigate, sameAddress(me, chit.chit.payer), detection);
   }
   if (chit.settled) return settledScreen(chit, navigate, isPayer, isWorker);
-  if (chit.declined) return declinedScreen(chit, navigate, isPayer);
+  /*
+   * A handshake names one payee, so its decline is final for both of the only two people it
+   * could ever have meant. An open race names nobody — anyone may have declined it, and anyone
+   * else is still free to sign it — so only the payer, watching their own link, is told.
+   */
+  if (chit.declined && (chit.chit.kind !== 'race' || isPayer)) return declinedScreen(chit, navigate, isPayer);
   if (chit.bounty && !chit.countersigned) return bountyScreen(chit, detection, navigate);
   if (chit.chit.kind === 'quote') return isWorker ? quoteOwnerScreen(chit, navigate) : acceptQuoteScreen(chit, detection, navigate);
   if (!chit.countersigned) return isPayer ? shareScreen(chit, detection, navigate) : countersignScreen(chit, detection, navigate);
@@ -1361,12 +1366,21 @@ function shareScreen(chit: ApiChit, detection: WalletDetection, navigate: Naviga
   const demo = button(t('No one to send it to? Try the demo worker'), () => void tryDemo(), 'inline', 'user');
   async function tryDemo(): Promise<void> {
     await withBusy(demo, t('Signing as the demo worker…'), async () => {
-      const result = await api.demoCountersign(chit.id);
-      if (!result.ok) {
-        messages.append(note(result.error, 'calm'));
-        return;
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const signature = await session.wallet.signText(canonicaliseDemoRequest({ chitId: chit.id }));
+        const result = await api.demoCountersign(chit.id, signature);
+        if (!result.ok) {
+          messages.append(note(result.error, 'calm'));
+          return;
+        }
+        navigate(chitPath(chit.id));
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
       }
-      navigate(chitPath(chit.id));
     });
   }
 
@@ -1669,16 +1683,38 @@ function countersignScreen(chit: ApiChit, detection: WalletDetection, navigate: 
     });
   }
 
-  // Declining is a real answer, recorded, so the payer is not left waiting on a link.
+  /*
+   * Declining is a real answer, recorded, so the payer is not left waiting on a link. It is
+   * signed the same way countersigning is — proof of a real wallet, bound to this one chit so it
+   * cannot be replayed as a decline of another — but what it can be signed *as* differs by kind.
+   * A handshake names its payee at creation, so only that wallet may decline it, and doing so
+   * ends it for both sides. An open race names nobody yet, the same reason anyone may countersign
+   * one — so anyone may decline one too, with the same asymmetry countersigning has: signing
+   * locks the race for everyone, declining only ends it for whoever just declined. Somebody else
+   * is still free to sign the same link; only the payer is told "they declined", as a nudge to
+   * stop waiting on that one reply, not as a claim that nobody else could still take it.
+   */
   const decline = button(t('Decline'), () => void doDecline(), 'quiet');
   async function doDecline(): Promise<void> {
     await withBusy(decline, t('Declining…'), async () => {
-      const result = await api.decline(chit.id);
-      if (!result.ok) {
-        messages.append(note(result.error, 'calm'));
-        return;
+      const session = await connectOrExplain(messages, chit.chit.chain);
+      if (!session) return;
+      try {
+        const signature = await session.wallet.signText(canonicaliseDecline({ chitId: chit.id }));
+        const result = await api.decline(chit.id, signature);
+        if (!result.ok) {
+          messages.append(note(result.error, 'calm'));
+          return;
+        }
+        // Shown directly rather than reloaded: a race stays live for anyone else with the
+        // link, so a fresh fetch here would not reliably show this particular decliner the
+        // confirmation they just earned.
+        declinedScreen(chit, navigate, false);
+      } catch (error) {
+        const { message, tone } = explain(error);
+        if (tone === 'calm') forgetWallet();
+        messages.append(note(message, tone));
       }
-      navigate(chitPath(chit.id));
     });
   }
 

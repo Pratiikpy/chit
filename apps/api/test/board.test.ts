@@ -125,15 +125,16 @@ test('a handshake is never on the board — it already has both parties', () => 
   assert.equal(board([shake], BLOCK, {}, NOW).total, 0);
 });
 
-test('countersigned, settled, declined and expired all leave the board', () => {
-  const cases: StoredChit[] = [
-    { ...work(), countersignedAt: NOW },
-    { ...work(), settledAt: NOW },
-    { ...work(), declinedAt: NOW },
-    work({ deadlineBlock: BLOCK - 1 }),
-  ];
+test('countersigned, settled and expired all leave the board', () => {
+  const cases: StoredChit[] = [{ ...work(), countersignedAt: NOW }, { ...work(), settledAt: NOW }, work({ deadlineBlock: BLOCK - 1 })];
   for (const one of cases) assert.equal(isOpen(one, BLOCK), false, JSON.stringify(Object.keys(one)));
   assert.equal(board(cases, BLOCK, {}, NOW).total, 0);
+});
+
+test('⭐ a declined race stays on the board — nobody was named on it to decline as', () => {
+  const declined = { ...work(), declinedAt: NOW };
+  assert.equal(isOpen(declined, BLOCK), true);
+  assert.equal(board([declined], BLOCK, {}, NOW).total, 1);
 });
 
 test('a deadline exactly at the current block is expired, not open', () => {

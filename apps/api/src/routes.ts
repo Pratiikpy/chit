@@ -13,7 +13,7 @@
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { canonicalise, canonicaliseAnswer, canonicaliseDelivery, canonicaliseQuestion, canonicaliseReview, canonicaliseShowcase, chitHash, isRecordOnly, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
+import { canonicalise, canonicaliseAnswer, canonicaliseDecline, canonicaliseDelivery, canonicaliseDemoRequest, canonicaliseQuestion, canonicaliseReview, canonicaliseShowcase, chitHash, isRecordOnly, minorUnitsPer, parseCanonical, type Chit } from '@chit/core';
 import { addressFromPublicKey, verifyChit, verifySignedText } from '@chit/verify';
 import type { StoredChit } from './db.ts';
 import type { ChitRepository } from './repository.ts';
@@ -658,13 +658,60 @@ export function createRoutes(options: RouteOptions) {
     });
   });
 
-  /** The worker says no. Recorded, so the payer's screen moves on instead of waiting forever. */
+  /**
+   * Somebody says no. Recorded, so the payer's screen moves on instead of waiting forever.
+   *
+   * Signed, the same as a countersignature would be — because it used not to be, and an unsigned
+   * decline is a free, anonymous way to mutate somebody else's chit. What the signature has to
+   * belong to depends on the kind, for the same reason it does on the countersign route: a
+   * handshake names its payee at creation, so only that wallet may decline it, and doing so ends
+   * it for both sides. An open race names nobody — the reason anyone may countersign one — so
+   * anyone may decline one too, but a decline from nobody-in-particular cannot mean "nobody else
+   * may take this either"; only whoever declined stops seeing this as an offer, and the payer is
+   * told so they can stop waiting on that one reply. Either way the signature is over its own
+   * canonical form, never over the chit's own bytes, so a decline can never be replayed as, or
+   * mistaken for, a countersignature.
+   */
   app.post('/api/chits/:id/decline', async (c) => {
     const stored = await store.get(c.req.param('id'));
     if (!stored) return c.json({ code: 'not-found', error: 'No chit with that id.' }, 404);
     if (stored.chit.kind === 'quote') return c.json({ code: 'not-declinable', error: 'A quote has no counterparty to decline it; it simply goes unpaid.' }, 409);
     if (stored.payeeSignature || stored.settledTx) return c.json({ code: 'too-late', error: 'This chit has already been signed.' }, 409);
     if (options.bounty?.isBounty(stored)) return c.json({ code: 'not-declinable', error: 'A bounty is not declined — just leave it for someone else.' }, 409);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const signature = (body as Record<string, unknown>)['signature'];
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'Declining has to be signed.' }, 400);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseDecline({ chitId: stored.id });
+    } catch (error) {
+      return c.json({ code: 'bad-decline', error: error instanceof Error ? error.message : 'Not a valid decline.' }, 400);
+    }
+
+    const verification = verifySignedText({
+      text: canonical,
+      publicKeyHex: signature.publicKeyHex,
+      signatureHex: signature.signatureHex,
+      // An open race names no payee yet, so — exactly as with countersigning — any real
+      // signature will do; a handshake names one, and only that one may decline it.
+      ...(stored.chit.payee ? { expectedAddress: stored.chit.payee } : {}),
+    });
+    if (!verification.ok) {
+      return c.json(
+        { code: verification.failure === 'bad-signature' ? 'bad-signature' : 'not-yours', error: 'Only the wallet this was sent to can decline it.' },
+        403,
+      );
+    }
+
     await store.decline(stored.id);
     const updated = await store.get(stored.id);
     return c.json(present(updated ?? stored, baseUrl, flags), 200);
@@ -952,6 +999,20 @@ export function createRoutes(options: RouteOptions) {
     }
 
     /*
+     * Who paid, resolved from the record rather than from the request.
+     *
+     * On a quote the payer field is empty by construction — the client is whoever sent the
+     * settling transaction and nothing else — so `settledFrom` is the only name for them. Passing
+     * an empty expected address into verifySignedText would skip the check entirely (it treats "no
+     * address expected" as "any signer will do"), so an empty resolution is refused outright rather
+     * than handed to it.
+     */
+    const payer = stored.chit.kind === 'quote' ? (stored.settledFrom ?? '') : stored.chit.payer;
+    if (!payer) {
+      return c.json({ code: 'unknown-parties', error: 'This chit does not name who paid, so agreement cannot be attributed.' }, 409);
+    }
+
+    /*
      * Verified against the bytes **on the row**, not against anything in the request.
      *
      * That is what makes the agreement an agreement to a specific piece: if the worker changed the
@@ -961,7 +1022,7 @@ export function createRoutes(options: RouteOptions) {
       text: piece.canonical,
       publicKeyHex: signature.publicKeyHex,
       signatureHex: signature.signatureHex,
-      expectedAddress: stored.chit.payer,
+      expectedAddress: payer,
     });
     if (!verification.ok) {
       return c.json({ code: 'not-yours', error: 'Only the person who paid for this work can agree to it being shown.' }, 403);
@@ -1162,6 +1223,10 @@ export function createRoutes(options: RouteOptions) {
   /**
    * The demo worker countersigns a chit on request — labelled, so a single person (a judge)
    * can create a chit, have it countersigned, pay it, and hold a real receipt.
+   *
+   * Requested by the chit's own payer, signed — otherwise it is a way for anyone with an open
+   * chit's id to make the server's own fixed wallet claim it, which is exactly countersigning
+   * somebody else's real listing out from under whichever freelancer might have taken it.
    */
   app.post('/api/chits/:id/demo-countersign', async (c) => {
     if (!options.demoWorker) return c.json({ code: 'no-demo', error: 'No demo worker on this deployment.' }, 404);
@@ -1170,8 +1235,37 @@ export function createRoutes(options: RouteOptions) {
     if (stored.chit.kind !== 'race' || stored.chit.payee) return c.json({ code: 'not-open', error: 'Only an open chit can be countersigned by the demo worker.' }, 409);
     if (options.bounty?.isBounty(stored)) return c.json({ code: 'not-for-bounty', error: 'The demo worker does not claim bounties.' }, 409);
     if (stored.payeeSignature) return c.json({ ...present(stored, baseUrl, flags), alreadyCountersigned: true }, 200);
-    const signature = options.demoWorker.countersign(stored.canonical);
-    await store.countersign(stored.id, signature, options.demoWorker.address);
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ code: 'bad-json', error: 'The request body was not valid JSON.' }, 400);
+    }
+    const signature = (body as Record<string, unknown>)['signature'];
+    if (!isSignature(signature)) {
+      return c.json({ code: 'missing-signature', error: 'Asking for the demo worker has to be signed by the chit’s own payer.' }, 400);
+    }
+
+    let canonical: string;
+    try {
+      canonical = canonicaliseDemoRequest({ chitId: stored.id });
+    } catch (error) {
+      return c.json({ code: 'bad-request', error: error instanceof Error ? error.message : 'Not a valid request.' }, 400);
+    }
+
+    const verification = verifySignedText({
+      text: canonical,
+      publicKeyHex: signature.publicKeyHex,
+      signatureHex: signature.signatureHex,
+      expectedAddress: stored.chit.payer,
+    });
+    if (!verification.ok) {
+      return c.json({ code: 'not-yours', error: 'Only this chit’s own payer can ask the demo worker to sign it.' }, 403);
+    }
+
+    const workerSignature = options.demoWorker.countersign(stored.canonical);
+    await store.countersign(stored.id, workerSignature, options.demoWorker.address);
     await store.recordEvent(stored.id, 'countersigned', `demo worker ${options.demoWorker.address}`);
     const updated = await store.get(stored.id);
     return c.json(present(updated ?? stored, baseUrl, flags), 200);

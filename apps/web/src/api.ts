@@ -222,12 +222,14 @@ export const api = {
     });
   },
 
-  /** Ask the labelled demo worker to countersign an open chit. */
-  demoCountersign(id: string) {
-    return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/demo-countersign`, { method: 'POST', body: '{}' });
+  /** Ask the labelled demo worker to countersign an open chit — only the chit's own payer may. */
+  demoCountersign(id: string, signature: { publicKeyHex: string; signatureHex: string }) {
+    return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/demo-countersign`, {
+      method: 'POST',
+      body: JSON.stringify({ signature }),
+    });
   },
 
-  /** The worker says no. Recorded, so the payer is not left waiting. */
   /** Sign "here it is" over the delivery's own canonical form. Obliges nobody to pay. */
   markDelivered(id: string, signature: { publicKeyHex: string; signatureHex: string }, link: string, note: string) {
     return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/delivered`, {
@@ -317,8 +319,12 @@ export const api = {
     return request<{ known: boolean; luna?: string }>(`/api/balance/${encodeURIComponent(address)}`);
   },
 
-  decline(id: string) {
-    return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/decline`, { method: 'POST', body: '{}' });
+  /** Only the wallet the offer was sent to can decline — see routes.ts's own comment on why. */
+  decline(id: string, signature: { publicKeyHex: string; signatureHex: string }) {
+    return request<ApiChit>(`/api/chits/${encodeURIComponent(id)}/decline`, {
+      method: 'POST',
+      body: JSON.stringify({ signature }),
+    });
   },
 };
 
