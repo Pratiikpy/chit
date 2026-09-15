@@ -7,21 +7,21 @@
     --page:#efeeeb; --surface:#f6f5f3; --raised:#fbfaf8; --subtle:#e8e6e1;
     --ink:#111112; --secondary:#55555b; --muted:#66666c; --faint:#8a8a90;
     --line:#e2dfda; --line-strong:#cfccc6;
-    --accent:#e8452c; --accent-text:#c33a24;
+    --accent:#e8452c; --accent-text:#c33a24; --accent-ink:#ffffff;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
       --page:#111112; --surface:#17171a; --raised:#1d1d21; --subtle:#232327;
       --ink:#f3f1ee; --secondary:#b9b7b2; --muted:#9c9a96; --faint:#6f6e6c;
       --line:#2b2b2f; --line-strong:#38383d;
-      --accent:#ff6a4d; --accent-text:#ff8468;
+      --accent:#ff6a4d; --accent-text:#ff8468; --accent-ink:#1a0d09;
     }
   }
   :root[data-theme="dark"]{
     --page:#111112; --surface:#17171a; --raised:#1d1d21; --subtle:#232327;
     --ink:#f3f1ee; --secondary:#b9b7b2; --muted:#9c9a96; --faint:#6f6e6c;
     --line:#2b2b2f; --line-strong:#38383d;
-    --accent:#ff6a4d; --accent-text:#ff8468;
+    --accent:#ff6a4d; --accent-text:#ff8468; --accent-ink:#1a0d09;
   }
   *{box-sizing:border-box;}
   body{
@@ -30,7 +30,7 @@
     padding:0 20px; padding-block:56px;
   }
   .wrap{max-width:920px; margin:0 auto;}
-  h1,h2{text-wrap:balance; font-weight:700; letter-spacing:-0.01em; margin:0;}
+  h1,h2,h3{text-wrap:balance; font-weight:700; letter-spacing:-0.01em; margin:0;}
   p{margin:0; line-height:1.6;}
   a{color:var(--accent-text);}
   .eyebrow{
@@ -51,13 +51,43 @@
     text-decoration:none; color:var(--ink);
   }
   .pill.primary{background:var(--ink); color:var(--page); border-color:var(--ink);}
-  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.primary{background:var(--accent); color:#1a0d09; border-color:var(--accent);}}
-  :root[data-theme="dark"] .pill.primary{background:var(--accent); color:#1a0d09; border-color:var(--accent);}
+  :root[data-theme="dark"] .pill.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.primary{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}}
 
-  header.hero{padding-block:8px 44px; border-bottom:1px solid var(--line); margin-bottom:44px;}
+  header.hero{padding-block:8px 40px; border-bottom:1px solid var(--line); margin-bottom:8px;}
 
-  section{margin-bottom:52px;}
-  section h2{font-size:1.1875rem; margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid var(--line);}
+  /* ---- the numbered walkthrough ---- */
+  .walkthrough{margin-block:44px 8px;}
+  .walkthrough > .kicker{margin-bottom:28px;}
+  .kicker h2{font-size:1.25rem;}
+  .kicker p{color:var(--muted); font-size:0.9375rem; margin-top:6px; max-width:60ch;}
+  .step{position:relative; padding-bottom:40px; margin-bottom:40px; border-bottom:1px solid var(--line);}
+  .step:last-child{border-bottom:none; margin-bottom:0;}
+  .step__head{display:flex; gap:16px; align-items:flex-start; margin-bottom:18px;}
+  .step__num{
+    flex:none; width:34px; height:34px; border-radius:999px; background:var(--ink); color:var(--page);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.9375rem;
+    font-variant-numeric:tabular-nums;
+  }
+  :root[data-theme="dark"] .step__num{background:var(--accent); color:var(--accent-ink);}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .step__num{background:var(--accent); color:var(--accent-ink);}}
+  .step h3{font-size:1.0625rem; margin-top:3px;}
+  .step__body{color:var(--muted); font-size:0.9rem; margin-top:6px; max-width:58ch;}
+
+  /* ---- the reference section (categorized, jump-linked) ---- */
+  .ref-intro{margin-block:60px 24px; padding-top:44px; border-top:1px solid var(--line-strong);}
+  .toc{
+    display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; padding:16px; background:var(--surface);
+    border:1px solid var(--line); border-radius:14px;
+  }
+  .toc a{
+    font-size:0.8125rem; font-weight:600; color:var(--secondary); text-decoration:none;
+    padding:6px 12px; border-radius:999px; background:var(--raised); border:1px solid var(--line);
+  }
+  .toc a:hover{color:var(--accent-text); border-color:var(--accent-text);}
+
+  section{margin-bottom:48px; scroll-margin-top:20px;}
+  section h2{font-size:1.0625rem; margin-bottom:16px; padding-bottom:10px; border-bottom:1px solid var(--line);}
 
   .grid{display:grid; gap:16px;}
   .grid--1{grid-template-columns:minmax(0,1fr);}
@@ -67,10 +97,11 @@
   figure img{display:block; width:100%; height:auto; border-bottom:1px solid var(--line);}
   figcaption{padding:12px 14px; font-size:0.8125rem; color:var(--secondary); line-height:1.5;}
 
-  .footer{padding-top:20px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; color:var(--faint); font-size:0.8125rem;}
+  .footer{padding-top:24px; margin-top:12px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; color:var(--faint); font-size:0.8125rem;}
 
   @media (max-width:640px){
     .grid--2, .grid--3{grid-template-columns:1fr;}
+    .step__head{gap:12px;}
   }
 </style>
 
@@ -86,7 +117,23 @@
     </div>
   </header>
 
-  <!--SECTIONS-->
+  <div class="walkthrough">
+    <div class="kicker">
+      <h2>The core loop, in the order a judge experiences it</h2>
+      <p>Five steps, start to finish — paste, sign, pay, and check it independently. Everything after this is the rest of the platform, organized below for reference.</p>
+    </div>
+    <!--WALKTHROUGH-->
+  </div>
+
+  <div class="ref-intro">
+    <h2>Everything else the platform does</h2>
+    <p class="step__body">Twelve more real flows — discovery, reputation, the bounty, disputes handled without a dispute system, and more. Jump to any of them:</p>
+    <nav class="toc">
+      <!--TOC-->
+    </nav>
+  </div>
+
+  <!--REFERENCE-->
 
   <div class="footer">
     <span>chit · MIT · built for Nimiq Mini Apps Competition Cycle 2</span>

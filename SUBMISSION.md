@@ -40,6 +40,10 @@ at first glance?"* — so it's the app's own first line, not invented copy)
 **demo_url**
 > https://chit-ecru.vercel.app
 
+**Supporting material** (not a form field, but worth having on hand)
+> - Proof deck, every real screen from a real run: https://chit-ecru.vercel.app/proof.html
+> - Full product + proof write-up (Notion, public): https://comfortable-goal-205.notion.site/chit-Product-Proof-Nimiq-Cycle-2-3dc9c0ce787681d587d2e98cddd19d98
+
 **video_url**
 > _Not yet — see "What's not covered" below. The file is ready; it needs uploading to YouTube
 > first, which needs your account, not mine._
