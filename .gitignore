@@ -17,4 +17,6 @@ api/index.js
 # Local test artefacts — the journey scripts regenerate all of these.
 .journey.db
 .journey.db-*
+.demo-video.db
+.demo-video.db-*
 shots/
