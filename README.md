@@ -2,7 +2,7 @@
 
 ### Paste the deal you already agreed. Both sign it. The payment carries the proof.
 
-**Live → [chit-ecru.vercel.app](https://chit-ecru.vercel.app)** · a Nimiq Pay Mini App · MIT
+**Live → [chit-ecru.vercel.app](https://chit-ecru.vercel.app)** · [proof deck](https://chit-ecru.vercel.app/proof.html), every real screen from a real run · a Nimiq Pay Mini App · MIT
 
 You agreed something in a Discord DM, a WhatsApp thread, a Fiverr message. chit turns that
 one line into a signed agreement, settles it in NIM in about a second, and leaves a receipt
@@ -139,6 +139,7 @@ can be recomputed by anyone from the transaction hashes.
 | **Counter-offer** | Answer a chit with a chit. The composer opens with the words, the amount and the direction already in it, pointed back at what it answers. |
 | **Half up front** | One chip halves the number *and* rewrites the sentence, because the sentence is what both sides sign. Offered, never insisted on — the same threads that ask for deposits warn that demanding one loses first projects. |
 | **Delivered** | The party being paid signs *here it is*, with a link to wherever the work lives. It moves no money and obliges nobody; the payer sees it before deciding. |
+| **Ask for a change** | The payer's own answer to a delivery that isn't quite right — signed, zero money, pointed at the chit it answers. Past three free rounds, the panel itself suggests a paid revision instead of a fourth. |
 | **The other half** | A settled deposit offers its second half, and any settled chit offers the next step of the job. |
 | **Waiting to be paid** | Activity leads with who owes you and for how long, with one tap to chase them — there are no reminders on this platform, so the person owed is the only thing that can. |
 | **An invoice** | The receipt prints as one, with details typed once and kept on the device. |
@@ -231,7 +232,7 @@ Nothing below is a claim about intent; each is a command.
 
 ```bash
 npm install
-npm test          # core 124 · verify 22 · api 182 (+1 needs a blob token) · web 49
+npm test          # core 133 · verify 22 · api 198 (+1 needs a blob token) · web 49
 npm run typecheck # four packages, strict, exactOptionalPropertyTypes
 npm run build
 ```
@@ -241,7 +242,7 @@ npm run build
 # 259 checks. Writes every screen to shots/ and asserts each fits a 390px phone.
 node --experimental-strip-types scripts/user-journey.mjs
 
-# The live deployment, in a real browser. 21 checks.
+# The live deployment, in a real browser. 31 checks.
 node --experimental-strip-types scripts/live-visual.mjs
 
 # Contrast, type scale, tap targets and dead space, measured rather than judged.
@@ -259,6 +260,37 @@ and can still be wrong on a real phone. So `packages/verify/test/keyguard-vector
 asserts chit's digest against the two vectors published in `nimiq/keyguard`'s own
 `Key.spec.js`, using **Node's** SHA-256 rather than `@nimiq/core`'s, so the two
 implementations are genuinely independent.
+
+---
+
+## Three real bugs, found this cycle by reading the code
+
+Not reported by anyone — a route-by-route pass over every mutation endpoint, triggered by
+finding the first one.
+
+`verifySignedText`'s `expectedAddress` is optional by design, for the one legitimate case
+where anybody may sign — an open chit nobody has countersigned yet. The same optionality is
+a footgun everywhere else: an *empty string* is also falsy, and a quote's `payer` field is
+empty by construction until it settles. `showcase/agree` checked the agreeing signature
+against `chit.payer` — so any wallet could agree to publish a settled quote's showcased
+work, because the check was silently skipped rather than refused. Fixed by resolving the
+real payer through `settledFrom`, the way `review` already did, and refusing outright rather
+than handing the check an address it would ignore.
+
+`decline` took no signature at all — a stranger holding an open chit's id, including one
+read straight off the public board, could decline it for the person it was sent to, or
+strip a listing from the board for everyone. Redesigned to mirror `countersign`'s own
+asymmetry: a named offer checks the real recipient, an open listing accepts any real
+signer, and a decline on an open listing only clears that signer's own view rather than
+closing it to everyone else.
+
+`demo-countersign` let anyone make the server's own demo wallet claim any open listing,
+including a real one that was never theirs. It now requires a signature from the chit's own
+payer before the demo worker will act.
+
+All three have their own canonical signed-statement type in `@chit/core` (`decline.ts`,
+`demo-request.ts`, mirroring `review.ts` and `showcase.ts`) and a dedicated regression test
+that reproduces the original bug before asserting the fix.
 
 ---
 
